@@ -1,0 +1,8 @@
+mach create "payload"
+machine LoadPlatformDescription @platforms/cpus/stm32h7.repl
+connector Connect sysbus.usart2 inter_cpu_bus
+showAnalyzer sysbus.usart1
+sysbus LoadELF @build/payload.elf
+sysbus.cpu VectorTableOffset 0x08000000
+sysbus.cpu SP `sysbus ReadDoubleWord 0x08000000`
+sysbus.cpu PC `sysbus ReadDoubleWord 0x08000004`
