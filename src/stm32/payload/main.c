@@ -1,19 +1,15 @@
-#include <config.h>
 #include <drivers.h>
+#include "utils/spi_demo.h"
 
-int main(int argc, char **argv) {
-
-    char *hello = "Payload Camera";
+int main(void) {
 
     uart1_init();
 
-    uart1_write_string("Hello from the ");
-    uart1_write_string(hello);
-    uart1_write_string("!\n");
+    uart1_write_string("Hello from the Payload Camera!\n");
 
-    while (1) {
+    spi_demo_slave("Payload", "PAYLD>A", "A>PAYLD");
 
-    }
+    while (1);
 
     return 0;
 }

@@ -1,24 +1,47 @@
 #include <config.h>
-#include <registers.h>
 #include <drivers.h>
+#include "utils/spi_demo.h"
 
-//#include "../../utils/crc.h"
+int main(void) {
 
-int main(int argc, char **argv) {
-
-    char *hello = "Avionics Computer";
-
-    //uint32_t crc = crc32(0, hello, 18);
+    const char messages[2][SPI_DEMO_SIZE] = {"A>RADIO", "A>PAYLD"};
+    const char replies[2][SPI_DEMO_SIZE] = {"RADIO>A", "PAYLD>A"};
+    char received[SPI_DEMO_SIZE];
 
     uart1_init();
 
-    uart1_write_string("Hello from the ");
-    uart1_write_string(hello);
-    uart1_write_string("!\n");
+    uart1_write_string("Hello from the Avionics Computer!\n");
 
-    while (1) {
+    if (spi4_init(1)) {
 
+        uart1_write_string("SPI init failed\n");
+
+        return 1;
     }
+
+    for (unsigned int i = 0; i < SPI_DEMO_ROUNDS; i++) {
+
+        for (unsigned int slave = SPI_RADIO; slave <= SPI_PAYLOAD; slave++) {
+
+            if (spi4_master_transfer(slave, messages[slave], received, sizeof(received)) ||
+                spi_demo_check(received, replies[slave])) {
+
+                uart1_write_string("SPI exchange failed\n");
+
+                return 1;
+            }
+
+            uart1_write_string("Avionics SPI RX: ");
+            uart1_write_string(received);
+            uart1_write_string("; TX: ");
+            uart1_write_string(messages[slave]);
+            uart1_write_string("\n");
+        }
+    }
+
+    uart1_write_string("SPI demo complete\n");
+
+    while (1);
 
     return 0;
 }

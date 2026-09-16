@@ -1,4 +1,7 @@
 #ifndef CUBESAT_CONFIG_H
 #define CUBESAT_CONFIG_H
 
+#define SPI_POLL_LIMIT 1000000U
+#define SPI_DEMO_ROUNDS 5U
+
 #endif

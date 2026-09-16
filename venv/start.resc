@@ -1,1 +1,2 @@
-start
+# Start via `make sim`: the C adapter connects and advances emulation time.
+# Do not start CPUs before their external peripheral callbacks are registered.

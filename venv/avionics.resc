@@ -1,8 +1,9 @@
+$global.avionics_elf ?= @build/avionics.elf
 mach create "avionics"
 machine LoadPlatformDescription @platforms/cpus/stm32h7.repl
-connector Connect sysbus.usart2 inter_cpu_bus
+machine LoadPlatformDescriptionFromString "spiBus: SPI.ExternalControlSPIPeripheral @ spi4"
 showAnalyzer sysbus.usart1
-sysbus LoadELF @build/avionics.elf
+sysbus LoadELF $global.avionics_elf
 sysbus.cpu VectorTableOffset 0x08000000
 sysbus.cpu SP `sysbus ReadDoubleWord 0x08000000`
 sysbus.cpu PC `sysbus ReadDoubleWord 0x08000004`

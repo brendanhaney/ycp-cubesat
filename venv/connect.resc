@@ -1,0 +1,4 @@
+# The C adapter registers SPI/MMIO/GPIO callbacks before advancing any CPUs.
+$spi_port ?= 3344
+emulation CreateExternalControlServer "spiControl" $spi_port
+log "SPI_API_READY"
