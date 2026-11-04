@@ -16,21 +16,21 @@ void spi_demo_slave(const char *name, const char *reply, const char *expected) {
     char received[SPI_DEMO_SIZE];
 
     if (spi4_init(0)) {
-        uart1_write_string("SPI init failed\n");
+        uart_printf("SPI init failed\n");
         return;
     }
     for (unsigned int i = 0; i < SPI_DEMO_ROUNDS; i++) {
         if (spi4_slave_transfer(reply, received, sizeof(received)) ||
             spi_demo_check(received, expected)) {
-            uart1_write_string("SPI exchange failed\n");
+            uart_printf("SPI exchange failed\n");
             return;
         }
-        uart1_write_string(name);
-        uart1_write_string(" SPI RX: ");
-        uart1_write_string(received);
-        uart1_write_string("; TX: ");
-        uart1_write_string(reply);
-        uart1_write_string("\n");
+        uart_printf(name);
+        uart_printf(" SPI RX: ");
+        uart_printf(received);
+        uart_printf("; TX: ");
+        uart_printf(reply);
+        uart_printf("\n");
     }
-    uart1_write_string("SPI demo complete\n");
+    uart_printf("SPI demo complete\n");
 }

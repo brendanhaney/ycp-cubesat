@@ -1,8 +1,11 @@
 CC      = arm-none-eabi-gcc
 OBJCOPY = arm-none-eabi-objcopy
 
+.DEFAULT_GOAL := all
+
 CFLAGS = -mcpu=cortex-m7 -mthumb -O2 -Wall -Iinclude -Isrc
-LDFLAGS = -Tstm32.ld -Wl,--gc-sections
+#LDFLAGS = -Tstm32.ld -Wl,--gc-sections
+LDFLAGS = -Tstm32.ld -Wl,--gc-sections --specs=nosys.specs -Wl,--defsym=end=_end
 
 COMMON = $(wildcard src/drivers/*.c) \
          $(wildcard src/utils/*.c)
@@ -10,15 +13,16 @@ COMMON = $(wildcard src/drivers/*.c) \
 BUILD = ./build
 
 RESC_DIR = ./venv
+NUCLEO_BUILD ?= $(BUILD)/nucleo-h753zi
 
 define build
 	@mkdir -p $(BUILD)
-	$(CC) $(CFLAGS) $(COMMON) $(wildcard src/stm32/$(1)/*.c) \
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(COMMON) $(wildcard src/stm32/$(1)/*.c) \
 		$(LDFLAGS) -o $(BUILD)/$(1).elf
 	$(OBJCOPY) -O binary $(BUILD)/$(1).elf $(BUILD)/$(1).rom
 endef
 
-.PHONY: all avionics radio payload clean sim sim-avionics sim-radio sim-payload test
+.PHONY: all avionics radio payload clean sim sim-headless sim-avionics sim-radio sim-payload test
 
 avionics:
 	$(call build,avionics)
@@ -59,6 +63,9 @@ $(BUILD)/test-spi-model: $(SPI_MODEL) $(RESC_DIR)/peripherals/spi_model.h tests/
 sim: all $(BUILD)/spi-renode
 	python3 $(RESC_DIR)/run_spi.py --build $(BUILD)
 
+sim-headless: all $(BUILD)/spi-renode
+	python3 $(RESC_DIR)/run_spi.py --build $(BUILD) --headless
+
 sim-avionics: avionics $(BUILD)/spi-renode
 	python3 $(RESC_DIR)/run_spi.py --build $(BUILD) --module avionics
 
@@ -68,6 +75,36 @@ sim-radio: radio $(BUILD)/spi-renode
 sim-payload: payload $(BUILD)/spi-renode
 	python3 $(RESC_DIR)/run_spi.py --build $(BUILD) --module payload
 
-test: all $(BUILD)/spi-integration $(BUILD)/test-spi-model
+# The legacy firmware SPI integration test expects an avionics SPI demo;
+# current avionics firmware runs the sensor polling loop instead.
+test: all test-uart test-i2c test-thermometer test-barometer $(BUILD)/test-spi-model
 	$(BUILD)/test-spi-model
-	python3 tests/test_spi.py --build $(BUILD)
+
+FLASH_TOOL = st-flash
+FLASH_ADDR = 0x08000000
+
+.PHONY: nucleo-avionics nucleo-radio nucleo-payload flash-avionics flash-radio flash-payload uart-listen test-uart test-i2c test-thermometer test-barometer
+
+# Keep board binaries separate from the USART1 images used by Renode.
+nucleo-avionics nucleo-radio nucleo-payload: nucleo-%:
+	$(MAKE) $* BUILD="$(NUCLEO_BUILD)" CPPFLAGS="$(CPPFLAGS) -DCUBESAT_NUCLEO_H753ZI"
+
+flash-avionics flash-radio flash-payload: flash-%: nucleo-%
+	$(FLASH_TOOL) --reset write $(NUCLEO_BUILD)/$*.rom $(FLASH_ADDR)
+
+uart-listen:
+	python3 scripts/listen_uart.py $(UART_ARGS)
+
+test-uart:
+	python3 -B tests/test_uart.py
+	python3 -B tests/test_listen_uart.py
+
+test-i2c:
+	python3 -B tests/test_i2c.py
+
+test-thermometer:
+	python3 -B tests/test_tmp117.py
+	python3 -B tests/test_avionics.py
+
+test-barometer:
+	python3 -B tests/test_ms5611.py

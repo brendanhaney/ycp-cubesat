@@ -1,3 +1,9 @@
+// SOURCES
+// https://www.st.com/resource/en/reference_manual/rm0433-stm32h742-stm32h743753-and-stm32h750-value-line-advanced-armbased-32bit-mcus-stmicroelectronics.pdf
+// https://github.com/STMicroelectronics/cmsis-device-h7/blob/master/Include/stm32h743xx.h
+// https://github.com/STMicroelectronics/stm32h7xx-hal-driver/blob/master/Inc/stm32h7xx_ll_rcc.h
+// https://github.com/renode/renode-infrastructure/blob/master/src/Emulator/Peripherals/Peripherals/SPI/STM32H7_SPI.cs
+
 #ifndef SPI_DRIVER_H
 #define SPI_DRIVER_H
 

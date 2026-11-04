@@ -9,11 +9,17 @@ import time
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
-def run_simulation(build, module="all", test=False, headless=False):
+def run_simulation(build, module="all", test=False, headless=False, radio_image=None):
     headless = headless or test
     build = pathlib.Path(build).resolve()
     build.mkdir(parents=True, exist_ok=True)
     log_path = build / ("spi-integration.log" if test else f"spi-{module}.log")
+    image_bytes = None
+    capture = None
+    if module == "all" and not test and radio_image is not None:
+        radio_image = pathlib.Path(radio_image).resolve()
+        image_bytes = radio_image.stat().st_size
+        capture = build / f"radio-image-{time.time_ns()}.uart.txt"
     # The external API is local co-simulation plumbing, not a firmware transport.
     with socket.socket() as reservation:
         reservation.bind(("127.0.0.1", 0))
@@ -21,8 +27,14 @@ def run_simulation(build, module="all", test=False, headless=False):
     modules = ("avionics", "radio", "payload") if module == "all" else (module,)
     commands = ["include @venv/common.resc", f"$spi_port={port}"]
     for name in modules:
-        commands.append(f"$global.{name}_elf=@{build / (name + '.elf')}")
+        elf = "radio-image-sender.elf" if name == "avionics" and capture else name + ".elf"
+        commands.append(f"$global.{name}_elf=@{build / elf}")
         commands.append(f"include @venv/{name}.resc")
+    if capture:
+        commands.extend([
+            'mach set "radio"',
+            f"sysbus.usart1 CreateFileBackend @{capture}",
+        ])
     commands.append("include @venv/connect.resc")
     options = ["--disable-gui", "--console", "--plain"] if headless else []
     adapter = None
@@ -46,14 +58,20 @@ def run_simulation(build, module="all", test=False, headless=False):
                         "Could not tokenize" in startup_log):
                     raise RuntimeError(f"Renode failed to start; see {log_path}")
                 time.sleep(0.05)
-            executable = build / ("spi-integration" if test else "spi-renode")
+            executable = build / (
+                "spi-integration" if test else "radio-image-sim" if capture else "spi-renode"
+            )
+            adapter_command = [str(executable), str(port), module]
+            if capture:
+                adapter_command.extend(["--image-bytes", str(image_bytes)])
+                print(f"Radio UART terminal capture: {capture}", flush=True)
             if not headless:
                 print("Renode GUI is open. The demo runs once, then pauses for inspection.", flush=True)
                 print("Use the Renode monitor to resume; quit Renode to end the session.", flush=True)
                 print(f"Logs: {log_path} and {adapter_log_path}", flush=True)
                 with adapter_log_path.open("w") as adapter_log:
                     adapter = subprocess.Popen(
-                        [str(executable), str(port), module, "--stay-connected"],
+                        [*adapter_command, "--stay-connected"],
                         cwd=ROOT, stdin=subprocess.PIPE, stdout=adapter_log,
                         stderr=subprocess.STDOUT, text=True,
                     )
@@ -67,14 +85,26 @@ def run_simulation(build, module="all", test=False, headless=False):
                                 raise RuntimeError(f"SPI adapter exited; see {adapter_log_path}")
                             break
                         time.sleep(0.1)
+                if capture:
+                    log.write(f"\nRadio UART terminal capture: {capture}\n")
+                    log.flush()
                 return log_path
             result = subprocess.run(
-                [str(executable), str(port), module], cwd=ROOT,
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=120,
+                adapter_command, cwd=ROOT,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                timeout=max(120, ((image_bytes + 255) // 256) * 30) if capture else 120,
             )
             # Append after Renode exits, avoiding concurrent writes to one file.
-            renode.communicate("quit\n", timeout=15)
+            monitor = "quit\n"
+            if capture:
+                monitor = (
+                    'mach set "radio"\n'
+                    f"sysbus.usart1 CloseFileBackend @{capture}\nquit\n"
+                )
+            renode.communicate(monitor, timeout=15)
             log.write(result.stdout)
+            if capture:
+                log.write(f"\nRadio UART terminal capture: {capture}\n")
             log.flush()
             if result.returncode:
                 raise RuntimeError(f"C SPI adapter failed: {result.stdout}\nSee {log_path}")
@@ -101,8 +131,14 @@ if __name__ == "__main__":
     parser.add_argument("--build", default=ROOT / "build", type=pathlib.Path)
     parser.add_argument("--module", choices=("all", "avionics", "radio", "payload"), default="all")
     parser.add_argument("--headless", action="store_true", help="run without windows and exit after the demo")
+    parser.add_argument(
+        "--radio-image", type=pathlib.Path,
+        help="optional image embedded in a separately built all-module radio sender fixture",
+    )
     args = parser.parse_args()
-    path = run_simulation(args.build, args.module, headless=args.headless)
+    path = run_simulation(
+        args.build, args.module, headless=args.headless, radio_image=args.radio_image,
+    )
     if args.headless:
         print(path.read_text())
     print(f"Renode log: {path}")

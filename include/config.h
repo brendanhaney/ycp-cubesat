@@ -4,4 +4,8 @@
 #define SPI_POLL_LIMIT 1000000U
 #define SPI_DEMO_ROUNDS 5U
 
+#ifndef I2C_POLL_LIMIT
+#define I2C_POLL_LIMIT 1000000U
+#endif
+
 #endif
