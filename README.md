@@ -1,7 +1,10 @@
-# ycp-cubesat
+# CubeSat Capstone, Year 1
 
-Fall 2026 - Spring 2027 CubeSat Capstone. STM32H7 firmware for
-avionics, radio, and camera payload computers.
+Fall 2026 - Spring 2027 CubeSat Capstone. This repository includes firmware for
+avionics (STM32H753), radio (STM32H753), and camera payload (STM32N6) computers .
+
+# Development Workflow
+All sub-systems/features should be developed in separate branches. Please create a branch for each feature. These development branches can be individually merged into the **dev** branch once they have been tested. Only after features are merged into dev and tested together can they be merged into **main**.
 
 ## AI Disclosure
 ChatGPT was used to create Renode configuration scripts (./venv) and the build system (Makefile, stm32.ld).
