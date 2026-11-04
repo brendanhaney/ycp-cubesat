@@ -1,0 +1,12 @@
+/home/baia/CubeSat/Payload/firmware/N657/snapshot_test/Lib/FreeRTOS/Source/portable/GCC/ARM_CM55_NTZ/non_secure/port.c:773:13:prvTaskExitError	2
+/home/baia/CubeSat/Payload/firmware/N657/snapshot_test/Lib/FreeRTOS/Source/portable/GCC/ARM_CM55_NTZ/non_secure/port.c:752:32:vPortSetupTimerInterrupt	1
+/home/baia/CubeSat/Payload/firmware/N657/snapshot_test/Lib/FreeRTOS/Source/portable/GCC/ARM_CM55_NTZ/non_secure/port.c:934:6:vPortYield	1
+/home/baia/CubeSat/Payload/firmware/N657/snapshot_test/Lib/FreeRTOS/Source/portable/GCC/ARM_CM55_NTZ/non_secure/port.c:946:6:vPortEnterCritical	1
+/home/baia/CubeSat/Payload/firmware/N657/snapshot_test/Lib/FreeRTOS/Source/portable/GCC/ARM_CM55_NTZ/non_secure/port.c:958:6:vPortExitCritical	2
+/home/baia/CubeSat/Payload/firmware/N657/snapshot_test/Lib/FreeRTOS/Source/portable/GCC/ARM_CM55_NTZ/non_secure/port.c:970:6:SysTick_Handler	2
+/home/baia/CubeSat/Payload/firmware/N657/snapshot_test/Lib/FreeRTOS/Source/portable/GCC/ARM_CM55_NTZ/non_secure/port.c:987:6:vPortSVCHandler_C	1
+/home/baia/CubeSat/Payload/firmware/N657/snapshot_test/Lib/FreeRTOS/Source/portable/GCC/ARM_CM55_NTZ/non_secure/port.c:1477:19:pxPortInitialiseStack	1
+/home/baia/CubeSat/Payload/firmware/N657/snapshot_test/Lib/FreeRTOS/Source/portable/GCC/ARM_CM55_NTZ/non_secure/port.c:1560:12:xPortStartScheduler	3
+/home/baia/CubeSat/Payload/firmware/N657/snapshot_test/Lib/FreeRTOS/Source/portable/GCC/ARM_CM55_NTZ/non_secure/port.c:1686:6:vPortEndScheduler	1
+/home/baia/CubeSat/Payload/firmware/N657/snapshot_test/Lib/FreeRTOS/Source/portable/GCC/ARM_CM55_NTZ/non_secure/port.c:1866:12:xPortIsInsideInterrupt	1
+/home/baia/CubeSat/Payload/firmware/N657/snapshot_test/Lib/FreeRTOS/Source/portable/GCC/ARM_CM55_NTZ/non_secure/port.c:1891:10:vPortValidateInterruptPriority	2
