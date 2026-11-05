@@ -17,6 +17,9 @@ static void print_error(const char *sensor, const char *operation, int status, u
         case MS5611_ERR_CALIBRATION: message = "invalid calibration/CRC"; break;
         case MS5611_ERR_DATA: message = "invalid ADC data"; break;
         case MS5611_ERR_NOT_INITIALIZED: message = "barometer not initialized"; break;
+        case BMI270_ERR_ID: message = "unexpected device ID (expected BMI270)"; break;
+        case BMI270_ERR_CONFIGURATION: message = "IMU configuration failed"; break;
+        case BMI270_ERR_NOT_INITIALIZED: message = "IMU not initialized"; break;
         default: message = "unknown error"; break;
 
     }
@@ -34,14 +37,16 @@ static void print_error(const char *sensor, const char *operation, int status, u
     uart_printf("\n");
 }
 
-static int poll_thermometer(int *ready) {
+static int poll_thermometer(uint8_t address, const char *name,
+                            const char *temperature_label,
+                            const char *waiting_label, int *ready) {
     if (!*ready) {
 
-        int status = tmp117_check(THERMOMETER_1_ADDRESS);
+        int status = tmp117_check(address);
 
         if (status != TMP117_OK) {
 
-            print_error("thermometer_1", "device check", status, THERMOMETER_1_ADDRESS);
+            print_error(name, "device check", status, address);
 
             return status;
         }
@@ -51,20 +56,20 @@ static int poll_thermometer(int *ready) {
 
     int32_t temp;
 
-    int status = tmp117_read(THERMOMETER_1_ADDRESS, &temp);
+    int status = tmp117_read(address, &temp);
 
     if (status == TMP117_OK) {
         
-        //print_temperature(temperature);
-        uart_printf("Temperature: %f C\n", (float)temp/1000);
+        uart_printf(temperature_label);
+        uart_printf("%f C\n", (double)temp / 1000);
 
     } else if (status == TMP117_NOT_READY) {
 
-        uart_printf("Thermometer: not ready!\n");
+        uart_printf(waiting_label);
 
     } else {
 
-        print_error("Thermometer", "read", status, THERMOMETER_1_ADDRESS);
+        print_error(name, "read", status, address);
 
         *ready = 0;
 
@@ -117,8 +122,7 @@ static int poll_barometer(ms5611_t *sensor) {
 
     if (status == MS5611_OK) {
 
-        //print_pressure(pressure);
-        uart_printf("%f", pressure);
+        uart_printf("Pressure: %f hPa\n", (double)pressure / 100);
 
     } else {
 
@@ -126,6 +130,60 @@ static int poll_barometer(ms5611_t *sensor) {
 
         sensor->initialized = 0;
 
+    }
+
+    return status;
+}
+
+static int poll_imu(bmi270_t *sensor) {
+
+    if (!sensor->initialized) {
+
+        uint8_t address = IMU_1_ADDRESS;
+        int status = bmi270_init(sensor, address);
+
+        if (status == I2C_ERR_NACK || status == BMI270_ERR_ID) {
+
+            int first_status = status;
+            address ^= 1U;
+            status = bmi270_init(sensor, address);
+
+            if (status != BMI270_OK)
+                print_error("imu_1", "initialization", first_status, IMU_1_ADDRESS);
+        }
+
+        if (status != BMI270_OK) {
+
+            print_error("imu_1", "initialization", status, address);
+
+            return status;
+        }
+
+        uart_printf("imu_1: BMI270 initialized at 0x%x\n", (unsigned int)sensor->address);
+    }
+
+    bmi270_sample_t sample;
+    int status = bmi270_read(sensor, &sample);
+
+    if (status == BMI270_OK) {
+
+        uart_printf("Accelerometer: X=%f Y=%f Z=%f g\n",
+                    (double)sample.accel_mg[0] / 1000,
+                    (double)sample.accel_mg[1] / 1000,
+                    (double)sample.accel_mg[2] / 1000);
+        uart_printf("Gyroscope: X=%f Y=%f Z=%f deg/s\n",
+                    (double)sample.gyro_mdps[0] / 1000,
+                    (double)sample.gyro_mdps[1] / 1000,
+                    (double)sample.gyro_mdps[2] / 1000);
+
+    } else if (status == BMI270_NOT_READY) {
+
+        uart_printf("imu_1: waiting for conversion\n");
+
+    } else {
+
+        print_error("imu_1", "read", status, sensor->address);
+        sensor->initialized = 0;
     }
 
     return status;
@@ -159,9 +217,11 @@ int main(void) {
 
     int bus_ready = 0;
     int addresses_reported = 0;
-    int thermometer_ready = 0;
+    int thermometer_1_ready = 0;
+    int thermometer_2_ready = 0;
 
     ms5611_t barometer = {0};
+    bmi270_t imu = {0};
 
     uart_init();
     uart_printf("\nHello, from the Avionics Board!\n");
@@ -174,8 +234,11 @@ int main(void) {
         return 1;
     }
 
-    uart_printf("Thermometer addr: %x on I2C\n", THERMOMETER_1_ADDRESS);
+    uart_printf("Thermometer 1 addr: %x on I2C\n", THERMOMETER_1_ADDRESS);
+    uart_printf("Thermometer 2 addr: %x on I2C\n", THERMOMETER_2_ADDRESS);
     uart_printf("Barometer   addr: %x on I2C\n\n", BAROMETER_1_ADDRESS);
+    uart_printf("IMU         addr: 0x%x on I2C (alternate 0x%x)\n\n",
+                IMU_1_ADDRESS, IMU_1_ADDRESS ^ 1U);
 
     for (;;) {
         if (!bus_ready) {
@@ -193,9 +256,12 @@ int main(void) {
                 if (!addresses_reported) {
                     
                     report_address(THERMOMETER_1_ADDRESS);
+                    report_address(THERMOMETER_2_ADDRESS);
 
                     report_address(BAROMETER_1_ADDRESS);
                     report_address(BAROMETER_1_ADDRESS ^ 1U);
+                    report_address(IMU_1_ADDRESS);
+                    report_address(IMU_1_ADDRESS ^ 1U);
 
                     addresses_reported = 1;
                 }
@@ -205,23 +271,33 @@ int main(void) {
 
         if (bus_ready) {
 
-            int thermometer_status = poll_thermometer(&thermometer_ready);
+            int thermometer_1_status = poll_thermometer(
+                THERMOMETER_1_ADDRESS, "thermometer_1", "Temperature 1: ",
+                "Thermometer 1: not ready!\n", &thermometer_1_ready);
+            int thermometer_2_status = poll_thermometer(
+                THERMOMETER_2_ADDRESS, "thermometer_2", "Temperature 2: ",
+                "Thermometer 2: not ready!\n", &thermometer_2_ready);
 
             int barometer_status = poll_barometer(&barometer);
+            int imu_status = poll_imu(&imu);
 
             uart_printf("\n");
 
-            if (bus_failed(thermometer_status) || bus_failed(barometer_status)) {
+            if (bus_failed(thermometer_1_status) || bus_failed(thermometer_2_status) ||
+                bus_failed(barometer_status) ||
+                bus_failed(imu_status)) {
 
                 bus_ready = 0;
 
-                thermometer_ready = 0;
+                thermometer_1_ready = 0;
+                thermometer_2_ready = 0;
 
                 barometer.initialized = 0;
+                imu.initialized = 0;
 
             }
         }
 
-        delay_ms(1000U);
+        delay_ms(10U);
     }
 }

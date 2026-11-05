@@ -3,6 +3,8 @@
 
 #include "i2c.h"
 
+#if defined(CUBESAT_STM32H7)
+
 /* Host tests replace MMIO access with a reactive peripheral model. */
 #ifdef I2C_TEST
 #include "i2c_test_io.h"
@@ -30,6 +32,48 @@
 #define ICR_CLEAR    0x3F30U
 
 static int initialized;
+
+static i2c_status_t configure_i2c2(uint32_t *timing)
+{
+    /* HSI /1,/2,/4,/8 with a constant 250 ns timing prescaler period.
+     * SCLDEL=1.5 us, SDADEL=500 ns, programmed SCL high/low=5.25 us.
+     * Analog filtering and synchronization add margin below 100 kHz.
+     */
+    static const uint32_t timings[] = {
+        0xF0521414U, 0x70521414U, 0x30521414U, 0x10521414U
+    };
+    uint32_t remaining = I2C_POLL_LIMIT;
+
+    I2C_WRITE(STM32H7_RCC_CR, I2C_READ(STM32H7_RCC_CR) | 1U);
+    while (!(I2C_READ(STM32H7_RCC_CR) & (1U << 2))) {
+        if (!remaining--)
+            return I2C_ERR_TIMEOUT;
+    }
+    /* I2C123 kernel = HSI. Leave the system/APB clocks and HSIDIV intact. */
+    I2C_WRITE(STM32H7_RCC_D2CCIP2R,
+              (I2C_READ(STM32H7_RCC_D2CCIP2R) & ~(3U << 12)) | (2U << 12));
+    I2C_WRITE(STM32H7_RCC_AHB4ENR, I2C_READ(STM32H7_RCC_AHB4ENR) | (1U << 5));
+    I2C_WRITE(STM32H7_RCC_APB1LENR, I2C_READ(STM32H7_RCC_APB1LENR) | (1U << 22));
+    (void)I2C_READ(STM32H7_RCC_AHB4ENR);
+    (void)I2C_READ(STM32H7_RCC_APB1LENR);
+    I2C_WRITE(STM32H7_RCC_APB1LRSTR, I2C_READ(STM32H7_RCC_APB1LRSTR) | (1U << 22));
+    I2C_WRITE(STM32H7_RCC_APB1LRSTR, I2C_READ(STM32H7_RCC_APB1LRSTR) & ~(1U << 22));
+
+    /* PF1=SCL, PF0=SDA: AF4, open drain, medium speed, external pull-ups. */
+    I2C_WRITE(GPIO_AFRL(STM32H7_GPIOF_BASE),
+              (I2C_READ(GPIO_AFRL(STM32H7_GPIOF_BASE)) & ~0xFFU) | 0x44U);
+    I2C_WRITE(GPIO_OTYPER(STM32H7_GPIOF_BASE),
+              I2C_READ(GPIO_OTYPER(STM32H7_GPIOF_BASE)) | 0x3U);
+    I2C_WRITE(GPIO_OSPEEDR(STM32H7_GPIOF_BASE),
+              (I2C_READ(GPIO_OSPEEDR(STM32H7_GPIOF_BASE)) & ~0xFU) | 0x5U);
+    I2C_WRITE(GPIO_PUPDR(STM32H7_GPIOF_BASE),
+              I2C_READ(GPIO_PUPDR(STM32H7_GPIOF_BASE)) & ~0xFU);
+    I2C_WRITE(GPIO_MODER(STM32H7_GPIOF_BASE),
+              (I2C_READ(GPIO_MODER(STM32H7_GPIOF_BASE)) & ~0xFU) | 0xAU);
+
+    *timing = timings[(I2C_READ(STM32H7_RCC_CR) >> 3) & 3U];
+    return I2C_OK;
+}
 
 static i2c_status_t wait_flag(uint32_t flag)
 {
@@ -100,46 +144,15 @@ static void abort_transfer(void)
 
 i2c_status_t i2c2_init(void)
 {
-    /* HSI /1,/2,/4,/8 with a constant 250 ns timing prescaler period.
-     * SCLDEL=1.5 us, SDADEL=500 ns, programmed SCL high/low=5.25 us.
-     * Analog filtering and synchronization add margin below 100 kHz.
-     */
-    static const uint32_t timing[] = {
-        0xF0521414U, 0x70521414U, 0x30521414U, 0x10521414U
-    };
-    uint32_t remaining = I2C_POLL_LIMIT;
-
+    uint32_t timing;
     initialized = 0;
-    I2C_WRITE(RCC_CR, I2C_READ(RCC_CR) | 1U);
-    while (!(I2C_READ(RCC_CR) & (1U << 2))) {
-        if (!remaining--)
-            return I2C_ERR_TIMEOUT;
-    }
-    /* I2C123 kernel = HSI. Leave the system/APB clocks and HSIDIV intact. */
-    I2C_WRITE(RCC_D2CCIP2R,
-              (I2C_READ(RCC_D2CCIP2R) & ~(3U << 12)) | (2U << 12));
-    I2C_WRITE(RCC_AHB4ENR, I2C_READ(RCC_AHB4ENR) | (1U << 5));
-    I2C_WRITE(RCC_APB1LENR, I2C_READ(RCC_APB1LENR) | (1U << 22));
-    (void)I2C_READ(RCC_AHB4ENR);
-    (void)I2C_READ(RCC_APB1LENR);
-    I2C_WRITE(RCC_APB1LRSTR, I2C_READ(RCC_APB1LRSTR) | (1U << 22));
-    I2C_WRITE(RCC_APB1LRSTR, I2C_READ(RCC_APB1LRSTR) & ~(1U << 22));
-
-    /* PF1=SCL, PF0=SDA: AF4, open drain, medium speed, external pull-ups. */
-    I2C_WRITE(GPIO_AFRL(GPIOF_BASE),
-              (I2C_READ(GPIO_AFRL(GPIOF_BASE)) & ~0xFFU) | 0x44U);
-    I2C_WRITE(GPIO_OTYPER(GPIOF_BASE),
-              I2C_READ(GPIO_OTYPER(GPIOF_BASE)) | 0x3U);
-    I2C_WRITE(GPIO_OSPEEDR(GPIOF_BASE),
-              (I2C_READ(GPIO_OSPEEDR(GPIOF_BASE)) & ~0xFU) | 0x5U);
-    I2C_WRITE(GPIO_PUPDR(GPIOF_BASE),
-              I2C_READ(GPIO_PUPDR(GPIOF_BASE)) & ~0xFU);
-    I2C_WRITE(GPIO_MODER(GPIOF_BASE),
-              (I2C_READ(GPIO_MODER(GPIOF_BASE)) & ~0xFU) | 0xAU);
+    i2c_status_t result = configure_i2c2(&timing);
+    if (result != I2C_OK)
+        return result;
 
     I2C_WRITE(I2C_CR1, 0); /* Analog filter enabled, digital filter disabled. */
     I2C_WRITE(I2C_CR2, 0); /* 7-bit addressing, no reload. */
-    I2C_WRITE(I2C_TIMINGR, timing[(I2C_READ(RCC_CR) >> 3) & 3U]);
+    I2C_WRITE(I2C_TIMINGR, timing);
     I2C_WRITE(I2C_ICR, ICR_CLEAR);
     I2C_WRITE(I2C_CR1, CR1_PE);
     initialized = 1;
@@ -267,3 +280,7 @@ i2c_status_t i2c2_read_reg(uint8_t address, uint8_t reg,
         return I2C_ERR_ARGUMENT;
     return transfer(address, NULL, 0, data, length, 1, reg);
 }
+
+#else
+#error "I2C2 driver is only implemented for STM32H7"
+#endif

@@ -1,10 +1,3 @@
-// SOURCES:
-// https://www.st.com/resource/en/reference_manual/rm0433-stm32h742-stm32h743753-and-stm32h750-value-line-advanced-armbased-32bit-mcus-stmicroelectronics.pdf
-// https://www.st.com/resource/en/errata_sheet/es0392-stm32h742xig-stm32h743xig-stm32h750xb-stm32h753xi-device-errata-stmicroelectronics.pdf
-// https://www.st.com/resource/en/datasheet/stm32h753vi.pdf
-// https://github.com/STMicroelectronics/stm32h7xx-hal-driver/blob/master/Src/stm32h7xx_hal_i2c.c
-// https://github.com/STMicroelectronics/stm32h7xx-hal-driver/blob/master/Inc/stm32h7xx_hal_i2c.h
-
 #ifndef I2C_DRIVER_H
 #define I2C_DRIVER_H
 
@@ -20,10 +13,7 @@ typedef enum {
     I2C_ERR_NOT_INITIALIZED = -5
 } i2c_status_t;
 
-/* I2C2 master on PF1/SCL and PF0/SDA (AF4), standard mode up to 100 kHz.
- * Connect external pull-ups to 3.3 V and a common ground. Blocking, bounded
- * polling only; callers must serialize access, including interrupt handlers.
- */
+/* Blocking I2C2 master; callers must serialize access. */
 i2c_status_t i2c2_init(void);
 i2c_status_t i2c2_probe(uint8_t address);
 
