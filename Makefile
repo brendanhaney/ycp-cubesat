@@ -22,8 +22,9 @@ stm32n6_FLAGS = -mcpu=cortex-m55+nomve -mthumb -mfloat-abi=soft -mcmse -DCUBESAT
 COMMON_SOURCES = src/drivers/uart.c src/drivers/spi.c \
                  $(wildcard src/utils/*.c) src/drivers/startup.c
 stm32h7_SOURCES = src/drivers/i2c.c src/drivers/tmp117.c src/drivers/ms5611.c \
+                  src/drivers/bmi270.c src/drivers/bosch/bmi2.c src/drivers/bosch/bmi270.c \
                   $(wildcard src/core/*.c)
-HEADERS = $(wildcard include/*.h src/drivers/*.h src/utils/*.h src/core/*.h)
+HEADERS = $(wildcard include/*.h src/drivers/*.h src/drivers/bosch/*.h src/utils/*.h src/core/*.h)
 
 define firmware
 $(3)/$(1).ld: linker/linker.ld.S include/config.h Makefile FORCE
@@ -106,7 +107,7 @@ sim-radio: renode-radio $(RENODE_BUILD)/spi-renode
 sim-payload: renode-payload $(RENODE_BUILD)/spi-renode
 	python3 $(RESC_DIR)/run_spi.py --build $(RENODE_BUILD) --module payload
 
-test: all test-build test-platform test-uart test-i2c test-thermometer test-barometer $(BUILD)/test-spi-model
+test: all test-build test-platform test-uart test-i2c test-thermometer test-barometer test-imu $(BUILD)/test-spi-model
 	$(BUILD)/test-spi-model
 
 test-build:
@@ -127,8 +128,8 @@ N6_HEADER_VERSION ?= 2.3
 N6_SIGN_ALIGN ?= -align
 N6_PROGRAMMER_ARGS ?= -c port=SWD mode=HOTPLUG ap=1
 
-.PHONY: signed-payload flash-avionics flash-radio flash-payload flash-payload-external run-payload n6-help uart-listen
-.PHONY: test-uart test-i2c test-thermometer test-barometer
+.PHONY: signed-payload flash-avionics flash-radio flash-payload flash-payload-external run-payload n6-help uart-listen uart-view
+.PHONY: test-uart test-i2c test-thermometer test-barometer test-imu
 
 $(N6_BUILD)/payload.bin: $(N6_BUILD)/payload.elf
 	$(OBJCOPY) -O binary $< $@
@@ -168,9 +169,13 @@ n6-help:
 uart-listen:
 	python3 scripts/listen_uart.py $(UART_ARGS)
 
+uart-view:
+	python3 scripts/view_avionics.py $(UART_ARGS)
+
 test-uart:
 	python3 -B tests/test_uart.py
 	python3 -B tests/test_listen_uart.py
+	python3 -B tests/test_view_avionics.py
 
 test-i2c:
 	python3 -B tests/test_i2c.py
@@ -181,3 +186,6 @@ test-thermometer:
 
 test-barometer:
 	python3 -B tests/test_ms5611.py
+
+test-imu:
+	python3 -B tests/test_bmi270.py
