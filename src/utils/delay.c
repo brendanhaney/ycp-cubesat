@@ -1,6 +1,5 @@
 #include "delay.h"
 
-// Arm Cortex-M7 SysTick
 #define SYSTICK_CTRL (*(volatile uint32_t *)0xE000E010U)
 #define SYSTICK_LOAD (*(volatile uint32_t *)0xE000E014U)
 #define SYSTICK_VAL  (*(volatile uint32_t *)0xE000E018U)

@@ -1,4 +1,4 @@
-$global.payload_elf ?= @build/payload.elf
+$global.payload_elf ?= @build/renode/payload.elf
 mach create "payload"
 machine LoadPlatformDescription @platforms/cpus/stm32h7.repl
 machine UnregisterFromParent sysbus.spi4

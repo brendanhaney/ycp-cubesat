@@ -128,7 +128,7 @@ def run_simulation(build, module="all", test=False, headless=False, radio_image=
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--build", default=ROOT / "build", type=pathlib.Path)
+    parser.add_argument("--build", default=ROOT / "build" / "renode", type=pathlib.Path)
     parser.add_argument("--module", choices=("all", "avionics", "radio", "payload"), default="all")
     parser.add_argument("--headless", action="store_true", help="run without windows and exit after the demo")
     parser.add_argument(

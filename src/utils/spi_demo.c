@@ -1,5 +1,6 @@
 #include <config.h>
-#include <drivers.h>
+#include "drivers/spi.h"
+#include "drivers/uart.h"
 
 #include "spi_demo.h"
 
