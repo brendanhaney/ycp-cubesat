@@ -3,6 +3,7 @@
 
 // add I2C addresses here.
 #define THERMOMETER_1_ADDRESS 0x48U
+#define THERMOMETER_2_ADDRESS 0x49U
 #define BAROMETER_1_ADDRESS 0x77U
 
 #endif

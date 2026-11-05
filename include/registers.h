@@ -1,71 +1,157 @@
 #ifndef STM32_REGISTERS_H
 #define STM32_REGISTERS_H
 
-#include "typedefs.h"
+#include <stdint.h>
+#include "config.h"
 
-// Console: USART1 in Renode, USART3 via ST-LINK on NUCLEO-H753ZI.
-#define USART1_BASE  0x40011000U
-#define USART3_BASE  0x40004800U
+#define MMIO32(address) (*(volatile uint32_t *)(uintptr_t)(address))
+#define MMIO8(address) (*(volatile uint8_t *)(uintptr_t)(address))
+
+#if defined(CUBESAT_STM32H7)
+/* STM32H753, RM0433. */
+#define STM32H7_USART1_BASE 0x40011000U
+#define STM32H7_USART3_BASE 0x40004800U
+#define STM32H7_SPI4_BASE   0x40013400U
+#define STM32H7_I2C2_BASE   0x40005800U
+#define STM32H7_RCC_BASE    0x58024400U
+#define STM32H7_GPIOB_BASE  0x58020400U
+#define STM32H7_GPIOD_BASE  0x58020C00U
+#define STM32H7_GPIOE_BASE  0x58021000U
+#define STM32H7_GPIOF_BASE  0x58021400U
+
+#define STM32H7_RCC_CR        MMIO32(STM32H7_RCC_BASE + 0x00U)
+#define STM32H7_RCC_D2CCIP1R  MMIO32(STM32H7_RCC_BASE + 0x50U)
+#define STM32H7_RCC_D2CCIP2R  MMIO32(STM32H7_RCC_BASE + 0x54U)
+#define STM32H7_RCC_APB1LRSTR MMIO32(STM32H7_RCC_BASE + 0x90U)
+#define STM32H7_RCC_AHB4ENR   MMIO32(STM32H7_RCC_BASE + 0xE0U)
+#define STM32H7_RCC_APB1LENR  MMIO32(STM32H7_RCC_BASE + 0xE8U)
+#define STM32H7_RCC_APB2ENR   MMIO32(STM32H7_RCC_BASE + 0xF0U)
+
 #ifdef CUBESAT_NUCLEO_H753ZI
-#define CONSOLE_USART_BASE USART3_BASE
+#define CONSOLE_USART_BASE STM32H7_USART3_BASE
 #else
-#define CONSOLE_USART_BASE USART1_BASE
+#define CONSOLE_USART_BASE STM32H7_USART1_BASE
 #endif
-#define USART_CR1    (*(volatile uint32_t *)(CONSOLE_USART_BASE + 0x00U))
-#define USART_CR2    (*(volatile uint32_t *)(CONSOLE_USART_BASE + 0x04U))
-#define USART_CR3    (*(volatile uint32_t *)(CONSOLE_USART_BASE + 0x08U))
-#define USART_BRR    (*(volatile uint32_t *)(CONSOLE_USART_BASE + 0x0CU))
-#define USART_ISR    (*(volatile uint32_t *)(CONSOLE_USART_BASE + 0x1CU))
-#define USART_TDR    (*(volatile uint32_t *)(CONSOLE_USART_BASE + 0x28U))
-#define USART_PRESC  (*(volatile uint32_t *)(CONSOLE_USART_BASE + 0x2CU))
+
+#define SPI4_BASE  STM32H7_SPI4_BASE
+#define I2C2_BASE  STM32H7_I2C2_BASE
+#define GPIOB_BASE STM32H7_GPIOB_BASE
+#define GPIOD_BASE STM32H7_GPIOD_BASE
+#define GPIOE_BASE STM32H7_GPIOE_BASE
+#define GPIOF_BASE STM32H7_GPIOF_BASE
+
+#define SPI_SLAVE_NSS_PORT   STM32H7_GPIOE_BASE
+#define SPI_SLAVE_NSS_PIN    4U
+#define SPI_SLAVE_NSS_MASK   (1U << SPI_SLAVE_NSS_PIN)
+#define SPI_SLAVE_READY_PORT STM32H7_GPIOB_BASE
+#define SPI_SLAVE_READY_PIN  0U
+#define SPI_SLAVE_READY_MASK (1U << SPI_SLAVE_READY_PIN)
+#define SPI_MASTER_SUPPORTED 1
+#define SPI_MASTER_CS_PORT   STM32H7_GPIOE_BASE
+#define SPI_MASTER_CS_MASK(slave) (1U << ((slave) + 3U))
+#define SPI_MASTER_READY_PORT STM32H7_GPIOB_BASE
+#define SPI_MASTER_READY_MASK(slave) (1U << (slave))
+#elif defined(CUBESAT_STM32N6)
+/* STM32N657 secure aliases, CMSIS stm32n657xx.h and RM0486. */
+#define STM32N6_RCC_BASE                  0x56028000U
+#define STM32N6_PWR_BASE                  0x56024800U
+#define STM32N6_SYSCFG_BASE               0x56008000U
+#define STM32N6_USART1_BASE               0x52001000U
+#define STM32N6_SPI4_BASE                 0x52003400U
+#define STM32N6_GPIOB_BASE                0x56020400U
+#define STM32N6_GPIOE_BASE                0x56021000U
+
+#define STM32N6_REG32(address)            (*(volatile uint32_t *)(address))
+#define STM32N6_RCC_CR                   STM32N6_REG32(STM32N6_RCC_BASE + 0x0000U)
+#define STM32N6_RCC_SR                   STM32N6_REG32(STM32N6_RCC_BASE + 0x0004U)
+#define STM32N6_RCC_HSICFGR              STM32N6_REG32(STM32N6_RCC_BASE + 0x0048U)
+#define STM32N6_RCC_CCIPR9               STM32N6_REG32(STM32N6_RCC_BASE + 0x0164U)
+#define STM32N6_RCC_CCIPR13              STM32N6_REG32(STM32N6_RCC_BASE + 0x0174U)
+#define STM32N6_RCC_BUSENR               STM32N6_REG32(STM32N6_RCC_BASE + 0x0244U)
+#define STM32N6_RCC_AHB4ENR              STM32N6_REG32(STM32N6_RCC_BASE + 0x025CU)
+#define STM32N6_RCC_APB2ENR              STM32N6_REG32(STM32N6_RCC_BASE + 0x026CU)
+#define STM32N6_RCC_APB4ENR1             STM32N6_REG32(STM32N6_RCC_BASE + 0x0274U)
+#define STM32N6_RCC_APB4ENR2             STM32N6_REG32(STM32N6_RCC_BASE + 0x0278U)
+#define STM32N6_RCC_AHB3RSTSR            STM32N6_REG32(STM32N6_RCC_BASE + 0x0A18U)
+#define STM32N6_RCC_AHB5RSTSR            STM32N6_REG32(STM32N6_RCC_BASE + 0x0A20U)
+#define STM32N6_RCC_APB1RSTSR1           STM32N6_REG32(STM32N6_RCC_BASE + 0x0A24U)
+#define STM32N6_RCC_BUSENSR              STM32N6_REG32(STM32N6_RCC_BASE + 0x0A44U)
+#define STM32N6_RCC_AHB4ENSR             STM32N6_REG32(STM32N6_RCC_BASE + 0x0A5CU)
+#define STM32N6_RCC_APB2ENSR             STM32N6_REG32(STM32N6_RCC_BASE + 0x0A6CU)
+#define STM32N6_RCC_APB4ENSR2            STM32N6_REG32(STM32N6_RCC_BASE + 0x0A78U)
+#define STM32N6_RCC_APB2RSTSR            STM32N6_REG32(STM32N6_RCC_BASE + 0x0A2CU)
+#define STM32N6_RCC_APB2RSTCR            STM32N6_REG32(STM32N6_RCC_BASE + 0x122CU)
+#define STM32N6_RCC_AHB3RSTCR            STM32N6_REG32(STM32N6_RCC_BASE + 0x1218U)
+#define STM32N6_RCC_AHB5RSTCR            STM32N6_REG32(STM32N6_RCC_BASE + 0x1220U)
+#define STM32N6_RCC_APB1RSTCR1           STM32N6_REG32(STM32N6_RCC_BASE + 0x1224U)
+#define STM32N6_RCC_AHB3ENCR             STM32N6_REG32(STM32N6_RCC_BASE + 0x1258U)
+#define STM32N6_RCC_AHB4ENCR             STM32N6_REG32(STM32N6_RCC_BASE + 0x125CU)
+#define STM32N6_RCC_APB1ENCR1            STM32N6_REG32(STM32N6_RCC_BASE + 0x1264U)
+#define STM32N6_PWR_SVMCR1               STM32N6_REG32(STM32N6_PWR_BASE + 0x0034U)
+#define STM32N6_PWR_SVMCR2               STM32N6_REG32(STM32N6_PWR_BASE + 0x0038U)
+#define STM32N6_PWR_SVMCR3               STM32N6_REG32(STM32N6_PWR_BASE + 0x003CU)
+#define STM32N6_SYSCFG_INITSVTORCR       STM32N6_REG32(STM32N6_SYSCFG_BASE + 0x0010U)
+#define STM32N6_SYSCFG_VDDIO4CCCR        STM32N6_REG32(STM32N6_SYSCFG_BASE + 0x0044U)
+#define STM32N6_SYSCFG_VDDIO5CCCR        STM32N6_REG32(STM32N6_SYSCFG_BASE + 0x004CU)
+#define STM32N6_SYSCFG_VDDIO2CCCR        STM32N6_REG32(STM32N6_SYSCFG_BASE + 0x0054U)
+#define STM32N6_SYSCFG_VDDIO3CCCR        STM32N6_REG32(STM32N6_SYSCFG_BASE + 0x005CU)
+#define STM32N6_SYSCFG_VDDCCCR           STM32N6_REG32(STM32N6_SYSCFG_BASE + 0x0064U)
+
+#define CONSOLE_USART_BASE               STM32N6_USART1_BASE
+#define SPI4_BASE                        STM32N6_SPI4_BASE
+#define GPIOB_BASE                       STM32N6_GPIOB_BASE
+#define GPIOE_BASE                       STM32N6_GPIOE_BASE
+
+#define SPI_MASTER_SUPPORTED             0
+#define SPI_SLAVE_NSS_PORT               GPIOE_BASE
+#define SPI_SLAVE_NSS_PIN                11U
+#define SPI_SLAVE_NSS_MASK               (1U << SPI_SLAVE_NSS_PIN)
+#define SPI_SLAVE_READY_PORT             GPIOB_BASE
+#define SPI_SLAVE_READY_PIN              2U
+#define SPI_SLAVE_READY_MASK             (1U << SPI_SLAVE_READY_PIN)
+#endif
+
+#define USART_CR1    MMIO32(CONSOLE_USART_BASE + 0x00U)
+#define USART_CR2    MMIO32(CONSOLE_USART_BASE + 0x04U)
+#define USART_CR3    MMIO32(CONSOLE_USART_BASE + 0x08U)
+#define USART_BRR    MMIO32(CONSOLE_USART_BASE + 0x0CU)
+#define USART_ISR    MMIO32(CONSOLE_USART_BASE + 0x1CU)
+#define USART_TDR    MMIO32(CONSOLE_USART_BASE + 0x28U)
+#define USART_PRESC  MMIO32(CONSOLE_USART_BASE + 0x2CU)
 
 #define USART_CR1_UE  (1U << 0)  // USART Enable
 #define USART_CR1_TE  (1U << 3)  // Transmitter Enable
 #define USART_ISR_TXE (1U << 7)  // Transmit Data Register Empty
 
-// SPI4 and board GPIOs (STM32H743, RM0433).
-#define RCC_BASE       0x58024400U
-#define RCC_CR         (*(volatile uint32_t *)(RCC_BASE + 0x00U))
-#define RCC_D2CCIP1R   (*(volatile uint32_t *)(RCC_BASE + 0x50U))
-#define RCC_D2CCIP2R   (*(volatile uint32_t *)(RCC_BASE + 0x54U))
-#define RCC_APB1LRSTR  (*(volatile uint32_t *)(RCC_BASE + 0x90U))
-#define RCC_AHB4ENR    (*(volatile uint32_t *)(RCC_BASE + 0xE0U))
-#define RCC_APB1LENR   (*(volatile uint32_t *)(RCC_BASE + 0xE8U))
-#define RCC_APB2ENR    (*(volatile uint32_t *)(RCC_BASE + 0xF0U))
+#define GPIO_MODER(b)  MMIO32((b) + 0x00U)
+#define GPIO_OTYPER(b) MMIO32((b) + 0x04U)
+#define GPIO_OSPEEDR(b) MMIO32((b) + 0x08U)
+#define GPIO_PUPDR(b)  MMIO32((b) + 0x0CU)
+#define GPIO_IDR(b)    MMIO32((b) + 0x10U)
+#define GPIO_BSRR(b)   MMIO32((b) + 0x18U)
+#define GPIO_AFRL(b)   MMIO32((b) + 0x20U)
+#define GPIO_AFRH(b)   MMIO32((b) + 0x24U)
 
-#define GPIOB_BASE     0x58020400U
-#define GPIOD_BASE     0x58020C00U
-#define GPIOE_BASE     0x58021000U
-#define GPIOF_BASE     0x58021400U
-#define GPIO_MODER(b)  (*(volatile uint32_t *)((b) + 0x00U))
-#define GPIO_OTYPER(b) (*(volatile uint32_t *)((b) + 0x04U))
-#define GPIO_OSPEEDR(b) (*(volatile uint32_t *)((b) + 0x08U))
-#define GPIO_PUPDR(b)  (*(volatile uint32_t *)((b) + 0x0CU))
-#define GPIO_IDR(b)    (*(volatile uint32_t *)((b) + 0x10U))
-#define GPIO_BSRR(b)   (*(volatile uint32_t *)((b) + 0x18U))
-#define GPIO_AFRL(b)   (*(volatile uint32_t *)((b) + 0x20U))
-#define GPIO_AFRH(b)   (*(volatile uint32_t *)((b) + 0x24U))
+#ifdef I2C2_BASE
+#define I2C_CR1        MMIO32(I2C2_BASE + 0x00U)
+#define I2C_CR2        MMIO32(I2C2_BASE + 0x04U)
+#define I2C_TIMINGR    MMIO32(I2C2_BASE + 0x10U)
+#define I2C_ISR        MMIO32(I2C2_BASE + 0x18U)
+#define I2C_ICR        MMIO32(I2C2_BASE + 0x1CU)
+#define I2C_RXDR       MMIO32(I2C2_BASE + 0x24U)
+#define I2C_TXDR       MMIO32(I2C2_BASE + 0x28U)
 
-// STM32H753 I2C2 (RM0433).
-#define I2C2_BASE      0x40005800U
-#define I2C_CR1        (*(volatile uint32_t *)(I2C2_BASE + 0x00U))
-#define I2C_CR2        (*(volatile uint32_t *)(I2C2_BASE + 0x04U))
-#define I2C_TIMINGR    (*(volatile uint32_t *)(I2C2_BASE + 0x10U))
-#define I2C_ISR        (*(volatile uint32_t *)(I2C2_BASE + 0x18U))
-#define I2C_ICR        (*(volatile uint32_t *)(I2C2_BASE + 0x1CU))
-#define I2C_RXDR       (*(volatile uint32_t *)(I2C2_BASE + 0x24U))
-#define I2C_TXDR       (*(volatile uint32_t *)(I2C2_BASE + 0x28U))
+#endif
 
-#define SPI4_BASE      0x40013400U
-#define SPI_CR1        (*(volatile uint32_t *)(SPI4_BASE + 0x00U))
-#define SPI_CR2        (*(volatile uint32_t *)(SPI4_BASE + 0x04U))
-#define SPI_CFG1       (*(volatile uint32_t *)(SPI4_BASE + 0x08U))
-#define SPI_CFG2       (*(volatile uint32_t *)(SPI4_BASE + 0x0CU))
-#define SPI_SR         (*(volatile uint32_t *)(SPI4_BASE + 0x14U))
-#define SPI_IFCR       (*(volatile uint32_t *)(SPI4_BASE + 0x18U))
+#define SPI_CR1        MMIO32(SPI4_BASE + 0x00U)
+#define SPI_CR2        MMIO32(SPI4_BASE + 0x04U)
+#define SPI_CFG1       MMIO32(SPI4_BASE + 0x08U)
+#define SPI_CFG2       MMIO32(SPI4_BASE + 0x0CU)
+#define SPI_SR         MMIO32(SPI4_BASE + 0x14U)
+#define SPI_IFCR       MMIO32(SPI4_BASE + 0x18U)
 // Byte accesses prevent packing multiple frames into one FIFO access.
-#define SPI_TXDR       (*(volatile uint8_t *)(SPI4_BASE + 0x20U))
-#define SPI_RXDR       (*(volatile uint8_t *)(SPI4_BASE + 0x30U))
+#define SPI_TXDR       MMIO8(SPI4_BASE + 0x20U)
+#define SPI_RXDR       MMIO8(SPI4_BASE + 0x30U)
 
 #define SPI_CR1_SPE    (1U << 0)
 #define SPI_CR1_CSTART (1U << 9)

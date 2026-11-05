@@ -13,7 +13,15 @@ enum {
     TMP117_ERR_ID = -6
 };
 
-// 7-bit i2c address
+typedef struct {
+
+    // 7-bit i2c address
+    uint8_t addr;
+    uint8_t ready;
+    int32_t temp;
+
+} tmp177_t;
+
 int tmp117_check(uint8_t addr);
 
 // will return temperature as millicelsius

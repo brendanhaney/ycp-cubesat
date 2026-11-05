@@ -1,4 +1,4 @@
-$global.avionics_elf ?= @build/avionics.elf
+$global.avionics_elf ?= @build/renode/avionics.elf
 mach create "avionics"
 machine LoadPlatformDescription @platforms/cpus/stm32h7.repl
 machine LoadPlatformDescriptionFromString "spiBus: SPI.ExternalControlSPIPeripheral @ spi4"

@@ -22,6 +22,7 @@ typedef struct {
     uint8_t last_command;
     uint16_t calibration[6];
     int initialized;
+    int status;
 } ms5611_t;
 
 int ms5611_init(ms5611_t *sensor, uint8_t address);
