@@ -8,7 +8,7 @@ Preview: python3 scripts/view_avionics.py --demo
 Startup is zero rotation. Rates are already zeroed, in body-frame deg/s;
 they are integrated into an orientation relative to startup, not compass north.
 Temperature, pressure and acceleration are displayed without affecting rotation.
-Estimated altitude uses pressure and a sea-level reference (default 1013.25 hPa).
+Estimated altitude uses pressure and a sea-level reference (default 1013.25 mbar).
 """
 
 import argparse
@@ -31,7 +31,9 @@ TELEMETRY_PATTERNS = {
         rf"Gyroscope:\s*X=({NUMBER})\s+Y=({NUMBER})\s+Z=({NUMBER})\s+deg/s"),
     "accelerometer": re.compile(
         rf"Accelerometer:\s*X=({NUMBER})\s+Y=({NUMBER})\s+Z=({NUMBER})\s+g"),
-    "temperature": re.compile(rf"Temperature:\s*({NUMBER})\s+C"),
+    # Older firmware has no sensor number; it still represents thermometer 1.
+    "temperature": re.compile(rf"Temperature(?: 1)?:\s*({NUMBER})\s+C"),
+    "temperature_2": re.compile(rf"Temperature 2:\s*({NUMBER})\s+C"),
     "pressure": re.compile(rf"Pressure:\s*({NUMBER})\s+hPa"),
 }
 IDENTITY = (1.0, 0.0, 0.0, 0.0)
@@ -183,7 +185,7 @@ def camera(point):
 def draw_scene(pygame, screen, fonts, motion, telemetry, source, now, error=None):
     screen.fill(BACKGROUND)
     width, height = screen.get_size()
-    compact = height < 700
+    compact = height < 740
     # Reserve the right sidebar so sensor cards never cover the cube or axes.
     viewport_width = width - 334
     origin = (viewport_width // 2, height // 2 + 30)
@@ -250,42 +252,45 @@ def draw_scene(pygame, screen, fonts, motion, telemetry, source, now, error=None
             return "PAUSED / receiving data", (244, 199, 114)
         return f"LIVE / sample age {age:.1f}s", AXIS_COLORS[1]
 
-    vector_height = 136 if compact else 164
-    scalar_height = 80 if compact else 94
+    vector_height = 120 if compact else 164
+    scalar_height = 72 if compact else 94
+    panel_gap = 8 if compact else 12
     y = 18
     for kind, heading, unit in (("gyroscope", "GYROSCOPE", "deg/s"),
                                 ("accelerometer", "ACCELEROMETER", "g")):
         panel = pygame.Rect(width - 302, y, 280, vector_height)
         pygame.draw.rect(screen, (24, 33, 47), panel, border_radius=10)
-        label(heading, (width - 40, y + 13), MUTED, small, right=True)
+        label(heading, (width - 40, y + (8 if compact else 13)), MUTED, small, right=True)
         values = telemetry.values.get(kind)
         for index, color in enumerate(AXIS_COLORS):
             value = f'{values[index]:+10.3f} {unit}' if values is not None else f'-- {unit}'
             label(f'{"XYZ"[index]}  {value}',
-                  (width - 40, y + 40 + (23 if compact else 27)*index), color, right=True)
+                  (width - 40, y + (32 if compact else 40) + (20 if compact else 27)*index),
+                  color, right=True)
         status, status_color = sensor_status(kind)
-        label(status, (width - 40, y + (113 if compact else 131)),
+        label(status, (width - 40, y + (99 if compact else 131)),
               status_color, small, right=True)
-        y += vector_height + 12
+        y += vector_height + panel_gap
 
-    for kind, heading, unit, decimals in (("temperature", "TEMPERATURE", "C", 3),
-                                          ("pressure", "BAROMETER / PRESSURE", "hPa", 2)):
+    for kind, heading, unit, decimals in (("temperature", "TEMPERATURE 1", "C", 3),
+                                          ("temperature_2", "TEMPERATURE 2", "C", 3),
+                                          ("pressure", "BAROMETER / PRESSURE", "mbar", 2)):
         extra_height = 28 if kind == "pressure" else 0
         panel = pygame.Rect(width - 302, y, 280, scalar_height + extra_height)
         pygame.draw.rect(screen, (24, 33, 47), panel, border_radius=10)
-        label(heading, (width - 40, y + 10), MUTED, small, right=True)
+        label(heading, (width - 40, y + (8 if compact else 10)), MUTED, small, right=True)
         values = telemetry.values.get(kind)
         value = f'{values[0]:.{decimals}f} {unit}' if values is not None else f'-- {unit}'
-        label(value, (width - 40, y + 32), TEXT, right=True)
+        label(value, (width - 40, y + (27 if compact else 32)), TEXT, right=True)
         if kind == "pressure":
             altitude = telemetry.altitude_m
             value = f'{altitude:.1f} m' if altitude is not None else '-- m'
-            label("Altitude (est.)", (width - 284, y + 63), MUTED, small)
-            label(value, (width - 40, y + 60), TEXT, right=True)
+            label("Altitude (est.)", (width - 284, y + (58 if compact else 63)), MUTED, small)
+            label(value, (width - 40, y + (55 if compact else 60)), TEXT, right=True)
         status, status_color = sensor_status(kind)
-        label(status, (width - 40, y + (61 if compact else 69) + extra_height),
+        label(status, (width - 40, y + (50 if compact else 69) + extra_height),
               status_color, small, right=True)
-        y += scalar_height + extra_height + 12
+        y += scalar_height + extra_height + panel_gap
 
     label("Dashed: fixed world axes    Arrows: cube body axes", (26, height - 87), MUTED, small)
     label("R  zero orientation     SPACE  pause/resume     ESC  close", (26, height - 61), TEXT, small)
@@ -303,7 +308,7 @@ def main(argv=None):
     parser.add_argument("--list-ports", action="store_true", help="list serial ports and exit")
     parser.add_argument("--demo", action="store_true", help="preview telemetry and rotation without a connected board")
     parser.add_argument("--sea-level-pressure", type=float, default=DEFAULT_SEA_LEVEL_PRESSURE,
-                        metavar="HPA", help="reference pressure for altitude (default: 1013.25 hPa)")
+                        metavar="HPA", help="reference pressure for altitude (default: 1013.25 mbar)")
     args = parser.parse_args(argv)
     if args.baud <= 0:
         parser.error("--baud must be positive")
@@ -365,6 +370,7 @@ def main(argv=None):
                 for kind, values in (("gyroscope", (12.0, 22.0, 8.0)),
                                      ("accelerometer", (0.0, 0.0, 1.0)),
                                      ("temperature", (24.0,)),
+                                     ("temperature_2", (25.5,)),
                                      ("pressure", (1013.25,))):
                     receive_telemetry(motion, telemetry, kind, values, now)
             elif error is None:

@@ -18,12 +18,23 @@ References used for register definitions and model behavior:
 
 ## Avionics I2C sensors and UART
 
-The avionics loop polls the TMP117 thermometer, MS5611 barometer, and SparkFun
-SEN-22397 BMI270 IMU on I2C2 once per second. The BMI270 driver uses Bosch's
+The avionics loop polls two TMP117 thermometers, the MS5611 barometer, and SparkFun
+SEN-22397 BMI270 IMU on I2C2, with a 10 ms delay between polling rounds. Each TMP117
+reports a new reading only when its conversion is ready. The BMI270 driver uses Bosch's
 SensorAPI and startup configuration, with both accelerometer and gyroscope set
 to 100 Hz, at ±2 g and ±250 degrees/second. UART reports acceleration in g and
 angular velocity in degrees/second along X, Y, and Z. These are sensor readings;
 orientation estimation and gyroscope bias calibration are not performed.
+
+Thermometer 1 uses `0x48` and thermometer 2 uses `0x49`, configured in
+`include/sensors.h`. Set the first TMP117's ADD0 to GND and the second's ADD0 to
+V+ (3.3 V); use the breakout's address selector as described by its manufacturer.
+Two boards left at the same address cannot be read independently. The address is
+selected by hardware, not by writing a sensor register. The TI datasheet's
+Table 7-2, linked at the top of `src/drivers/tmp117.h`, documents all four choices.
+Each thermometer has its own device-ID check, conversion-ready state, and error
+recovery. UART labels their readings `Temperature 1: ... C` and
+`Temperature 2: ... C`; a missing thermometer does not stop the other sensors.
 
 The IMU defaults to the unshifted 7-bit address `0x68` in `include/sensors.h`;
 initialization also tries `0x69` if the first address does not acknowledge or
@@ -55,7 +66,7 @@ the firmware builds, sensor drivers, avionics polling/recovery, and UART checks.
 orthographic wireframe cube. Dashed world XYZ axes stay fixed; colored body XYZ
 arrows rotate with the cube. Both sets originate at the cube's center. The top
 right shows the incoming gyroscope X/Y/Z rates in degrees/second, accelerometer
-X/Y/Z readings in g, temperature in Celsius, and barometer pressure in hPa.
+X/Y/Z readings in g, both thermometer readings in Celsius, and barometer pressure in hPa.
 Each sensor has its own sample-age status; missing readings show a placeholder
 and stale readings are marked. Only gyroscope rates affect the cube's rotation.
 
@@ -83,5 +94,5 @@ Startup is zero rotation, assuming the gyroscope bias is already zeroed.
 **R** resets the cube's orientation, **Space** pauses/resumes rotation while
 still showing incoming readings, and **Esc** closes the window. The world frame
 is the startup/reset reference. Gyroscope integration accumulates drift; the
-current once-per-second UART output can miss fast motion. Rotation freezes
+UART sampling can miss fast motion. Rotation freezes
 after three seconds without a gyro sample or immediately on disconnection.
