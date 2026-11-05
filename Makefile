@@ -170,12 +170,12 @@ uart-listen:
 	python3 scripts/listen_uart.py $(UART_ARGS)
 
 uart-view:
-	python3 scripts/view_imu.py $(UART_ARGS)
+	python3 scripts/view_avionics.py $(UART_ARGS)
 
 test-uart:
 	python3 -B tests/test_uart.py
 	python3 -B tests/test_listen_uart.py
-	python3 -B tests/test_view_imu.py
+	python3 -B tests/test_view_avionics.py
 
 test-i2c:
 	python3 -B tests/test_i2c.py

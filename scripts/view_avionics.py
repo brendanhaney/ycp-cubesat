@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""Show UART gyroscope rates as an orthographic, rotating wireframe cube.
+"""Show avionics UART telemetry alongside an orthographic wireframe cube.
 
 Install: python3 -m pip install pyserial pygame
-Run:     python3 scripts/view_imu.py [--port /dev/ttyACM0]
-Preview: python3 scripts/view_imu.py --demo
+Run:     python3 scripts/view_avionics.py [--port /dev/ttyACM0]
+Preview: python3 scripts/view_avionics.py --demo
 
 Startup is zero rotation. Rates are already zeroed, in body-frame deg/s;
 they are integrated into an orientation relative to startup, not compass north.
+Temperature, pressure and acceleration are displayed without affecting rotation.
 """
 
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
 import os
 import re
@@ -24,9 +25,14 @@ else:
 
 
 NUMBER = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
-GYROSCOPE = re.compile(
-    rf"Gyroscope:\s*X=({NUMBER})\s+Y=({NUMBER})\s+Z=({NUMBER})\s+deg/s"
-)
+TELEMETRY_PATTERNS = {
+    "gyroscope": re.compile(
+        rf"Gyroscope:\s*X=({NUMBER})\s+Y=({NUMBER})\s+Z=({NUMBER})\s+deg/s"),
+    "accelerometer": re.compile(
+        rf"Accelerometer:\s*X=({NUMBER})\s+Y=({NUMBER})\s+Z=({NUMBER})\s+g"),
+    "temperature": re.compile(rf"Temperature:\s*({NUMBER})\s+C"),
+    "pressure": re.compile(rf"Pressure:\s*({NUMBER})\s+hPa"),
+}
 IDENTITY = (1.0, 0.0, 0.0, 0.0)
 AXES = ((1, 0, 0), (0, 1, 0), (0, 0, 1))
 AXIS_COLORS = ((255, 111, 126), (100, 221, 164), (105, 173, 255))
@@ -38,13 +44,15 @@ EDGES = tuple((a, b) for a in range(8) for b in range(a + 1, 8)
               if sum(x != y for x, y in zip(VERTICES[a], VERTICES[b])) == 1)
 
 
-def parse_gyroscope(line):
-    """Ignore other sensors, partial lines, invalid values and diagnostics."""
-    match = GYROSCOPE.fullmatch(line.strip())
-    if match is None:
-        return None
-    rates = tuple(float(value) for value in match.groups())
-    return rates if all(math.isfinite(value) for value in rates) else None
+def parse_telemetry(line):
+    """Parse firmware sensor lines, ignoring partial/invalid data and diagnostics."""
+    for kind, pattern in TELEMETRY_PATTERNS.items():
+        match = pattern.fullmatch(line.strip())
+        if match is not None:
+            values = tuple(float(value) for value in match.groups())
+            if all(math.isfinite(value) for value in values):
+                return kind, values
+    return None
 
 
 def multiply(q, r):
@@ -104,7 +112,23 @@ class Motion:
         self.updated_at = now
 
 
-def read_rates(connection, buffer):
+@dataclass
+class Telemetry:
+    values: dict = field(default_factory=dict)
+    received_at: dict = field(default_factory=dict)
+
+    def receive(self, kind, values, now):
+        self.values[kind] = values
+        self.received_at[kind] = now
+
+
+def receive_telemetry(motion, telemetry, kind, values, now):
+    telemetry.receive(kind, values, now)
+    if kind == "gyroscope":
+        motion.receive(values, now)
+
+
+def read_telemetry(connection, buffer):
     """Nonblocking UART reads, retaining lines split across reads/frames."""
     waiting = connection.in_waiting
     if not waiting:
@@ -117,7 +141,7 @@ def read_rates(connection, buffer):
         buffer.clear()
     samples = []
     for line in lines:
-        sample = parse_gyroscope(line.decode("ascii", errors="replace"))
+        sample = parse_telemetry(line.decode("ascii", errors="replace"))
         if sample is not None:
             samples.append(sample)
     return samples
@@ -133,11 +157,14 @@ def camera(point):
             math.cos(elevation)*depth + math.sin(elevation)*z)
 
 
-def draw_scene(pygame, screen, fonts, motion, source, now, error=None):
+def draw_scene(pygame, screen, fonts, motion, telemetry, source, now, error=None):
     screen.fill(BACKGROUND)
     width, height = screen.get_size()
-    origin = (width // 2, height // 2 + 30)
-    scale = min(width / 7, max(50, (height - 260) / 4.6))
+    compact = height < 700
+    # Reserve the right sidebar so sensor cards never cover the cube or axes.
+    viewport_width = width - 334
+    origin = (viewport_width // 2, height // 2 + 30)
+    scale = min(viewport_width / 6.7, max(50, (height - 260) / 4.6))
     small, normal, title = fonts
 
     def project(point):
@@ -150,7 +177,7 @@ def draw_scene(pygame, screen, fonts, motion, source, now, error=None):
         rect = surface.get_rect(topright=position) if right else surface.get_rect(topleft=position)
         screen.blit(surface, rect)
 
-    label("GYROSCOPE", (26, 22), font=title)
+    label("AVIONICS", (26, 22), font=title)
     label("Orthographic / startup = zero", (27, 57), MUTED, small)
 
     world_color = (68, 82, 102)
@@ -183,35 +210,60 @@ def draw_scene(pygame, screen, fonts, motion, source, now, error=None):
             pygame.draw.polygon(screen, color, [body_tip,
                                 (body_tip[0]-10*ux+4*uy, body_tip[1]-10*uy-4*ux),
                                 (body_tip[0]-10*ux-4*uy, body_tip[1]-10*uy+4*ux)])
-        label("XYZ"[index] + " body", (body_tip[0] + 7, body_tip[1] + 3), color, small)
+        body_label = "XYZ"[index] if compact else "XYZ"[index] + " body"
+        label(body_label, (body_tip[0] + 7, body_tip[1] + (-20 if compact else 3)), color, small)
     pygame.draw.circle(screen, TEXT, origin, 4)
 
-    panel = pygame.Rect(width - 302, 18, 280, 164)
-    pygame.draw.rect(screen, (24, 33, 47), panel, border_radius=10)
-    label("UART / RAW RATES", (width - 40, 31), MUTED, small, right=True)
-    for index, (rate, color) in enumerate(zip(motion.rates, AXIS_COLORS)):
-        value = f'{rate:+10.3f} deg/s' if motion.received_at is not None else '       -- deg/s'
-        label(f'{"XYZ"[index]}  {value}', (width - 40, 58 + 27*index), color, right=True)
+    def sensor_status(kind):
+        received_at = telemetry.received_at.get(kind)
+        if error:
+            return "DISCONNECTED", AXIS_COLORS[0]
+        if received_at is None:
+            return "WAITING FOR DATA", MUTED
+        age = max(0, now - received_at)
+        if age > motion.stale_timeout:
+            return f"STALE / last sample {age:.1f}s ago", AXIS_COLORS[0]
+        if kind == "gyroscope" and motion.paused:
+            return "PAUSED / receiving data", (244, 199, 114)
+        return f"LIVE / sample age {age:.1f}s", AXIS_COLORS[1]
 
-    age = None if motion.received_at is None else max(0, now - motion.received_at)
-    if error:
-        status, status_color = "DISCONNECTED / frozen", AXIS_COLORS[0]
-    elif age is None:
-        status, status_color = "WAITING FOR GYROSCOPE", MUTED
-    elif age > motion.stale_timeout:
-        status, status_color = f"STALE / last sample {age:.1f}s ago", AXIS_COLORS[0]
-    elif motion.paused:
-        status, status_color = "PAUSED / receiving data", (244, 199, 114)
-    else:
-        status, status_color = f"LIVE / sample age {age:.1f}s", AXIS_COLORS[1]
-    label(status, (width - 40, 149), status_color, small, right=True)
+    vector_height = 136 if compact else 164
+    scalar_height = 80 if compact else 94
+    y = 18
+    for kind, heading, unit in (("gyroscope", "GYROSCOPE", "deg/s"),
+                                ("accelerometer", "ACCELEROMETER", "g")):
+        panel = pygame.Rect(width - 302, y, 280, vector_height)
+        pygame.draw.rect(screen, (24, 33, 47), panel, border_radius=10)
+        label(heading, (width - 40, y + 13), MUTED, small, right=True)
+        values = telemetry.values.get(kind)
+        for index, color in enumerate(AXIS_COLORS):
+            value = f'{values[index]:+10.3f} {unit}' if values is not None else f'-- {unit}'
+            label(f'{"XYZ"[index]}  {value}',
+                  (width - 40, y + 40 + (23 if compact else 27)*index), color, right=True)
+        status, status_color = sensor_status(kind)
+        label(status, (width - 40, y + (113 if compact else 131)),
+              status_color, small, right=True)
+        y += vector_height + 12
+
+    for kind, heading, unit, decimals in (("temperature", "TEMPERATURE", "C", 3),
+                                          ("pressure", "BAROMETER / PRESSURE", "hPa", 2)):
+        panel = pygame.Rect(width - 302, y, 280, scalar_height)
+        pygame.draw.rect(screen, (24, 33, 47), panel, border_radius=10)
+        label(heading, (width - 40, y + 10), MUTED, small, right=True)
+        values = telemetry.values.get(kind)
+        value = f'{values[0]:.{decimals}f} {unit}' if values is not None else f'-- {unit}'
+        label(value, (width - 40, y + 32), TEXT, right=True)
+        status, status_color = sensor_status(kind)
+        label(status, (width - 40, y + (61 if compact else 69)),
+              status_color, small, right=True)
+        y += scalar_height + 12
 
     label("Dashed: fixed world axes    Arrows: cube body axes", (26, height - 87), MUTED, small)
     label("R  zero orientation     SPACE  pause/resume     ESC  close", (26, height - 61), TEXT, small)
     if error:
         footer = error
     else:
-        footer = f"{source}  |  Gyro integration; reference = startup/reset."
+        footer = f"{source}  |  Rotation: gyroscope only; reference = startup/reset."
     label(footer[:130], (26, height - 33), MUTED, small)
 
 
@@ -220,7 +272,7 @@ def main(argv=None):
     parser.add_argument("--port", help="serial device, e.g. /dev/ttyACM0 or COM3")
     parser.add_argument("--baud", type=int, default=115200, help="baud rate (default: 115200)")
     parser.add_argument("--list-ports", action="store_true", help="list serial ports and exit")
-    parser.add_argument("--demo", action="store_true", help="preview rotation without a connected board")
+    parser.add_argument("--demo", action="store_true", help="preview telemetry and rotation without a connected board")
     args = parser.parse_args(argv)
     if args.baud <= 0:
         parser.error("--baud must be positive")
@@ -244,18 +296,19 @@ def main(argv=None):
             connection.reset_input_buffer()
             source = f"{device} / {args.baud} baud / 8N1"
         else:
-            source = "DEMO / simulated rates"
+            source = "DEMO / simulated telemetry"
 
         os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
         import pygame
         pygame.display.init()
         pygame.font.init()
         screen = pygame.display.set_mode((1100, 780), pygame.RESIZABLE)
-        pygame.display.set_caption("CubeSat / UART Gyroscope")
+        pygame.display.set_caption("CubeSat / Avionics Telemetry")
         fonts = (pygame.font.SysFont("dejavusans", 14),
                  pygame.font.SysFont("dejavusansmono", 18),
                  pygame.font.SysFont("dejavusans", 25, bold=True))
         motion = Motion()
+        telemetry = Telemetry()
         buffer = bytearray()
         clock = pygame.time.Clock()
         error = None
@@ -276,17 +329,21 @@ def main(argv=None):
                     motion.paused = not motion.paused
 
             if args.demo:
-                motion.receive((12.0, 22.0, 8.0), now)
+                for kind, values in (("gyroscope", (12.0, 22.0, 8.0)),
+                                     ("accelerometer", (0.0, 0.0, 1.0)),
+                                     ("temperature", (24.0,)),
+                                     ("pressure", (1013.25,))):
+                    receive_telemetry(motion, telemetry, kind, values, now)
             elif error is None:
                 try:
-                    for rates in read_rates(connection, buffer):
-                        motion.receive(rates, now)
+                    for kind, values in read_telemetry(connection, buffer):
+                        receive_telemetry(motion, telemetry, kind, values, now)
                 except (serial.SerialException, OSError) as exc:
                     error = f"UART error: {exc}"
                     print(error, file=sys.stderr)
                     motion.paused = True
             motion.advance(now)
-            draw_scene(pygame, screen, fonts, motion, source, now, error)
+            draw_scene(pygame, screen, fonts, motion, telemetry, source, now, error)
             pygame.display.flip()
             clock.tick(60)
         return 0
