@@ -285,6 +285,6 @@ int main(void) {
             }
         }
 
-        delay_ms(1000U);
+        delay_ms(10U);
     }
 }

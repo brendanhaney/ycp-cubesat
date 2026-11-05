@@ -48,3 +48,31 @@ make uart-listen UART_ARGS="--port /dev/ttyACM0"
 
 Run `make test-imu` for the BMI270 protocol/conversion checks, or `make test` for
 the firmware builds, sensor drivers, avionics polling/recovery, and UART checks.
+
+### Rotating cube viewer
+
+`scripts/view_imu.py` reads the same UART as the listener and displays an
+orthographic wireframe cube. Dashed world XYZ axes stay fixed; colored body XYZ
+arrows rotate with the cube. Both sets originate at the cube's center. The top
+right shows the incoming X/Y/Z rates in degrees/second and connection status.
+
+Install the two dependencies and run with automatic ST-LINK port selection:
+
+```sh
+python3 -m venv .venv-uart
+.venv-uart/bin/python -m pip install -r scripts/requirements-imu.txt
+.venv-uart/bin/python scripts/view_imu.py
+```
+
+Use `--port /dev/ttyACM0` (or `--port COM3` on Windows) to select a port,
+`--list-ports` to list devices, or `--demo` to preview without hardware. If the
+dependencies are already installed, `make uart-view` also launches the viewer
+and accepts the same `UART_ARGS` as `make uart-listen`. Close the UART listener
+before starting the viewer so the two programs do not compete for sensor data.
+
+Startup is zero rotation, assuming the gyroscope bias is already zeroed.
+**R** resets the cube's orientation, **Space** pauses/resumes rotation while
+still showing incoming readings, and **Esc** closes the window. The world frame
+is the startup/reset reference. Gyroscope integration accumulates drift; the
+current once-per-second UART output can miss fast motion. Rotation freezes
+after three seconds without a gyro sample or immediately on disconnection.

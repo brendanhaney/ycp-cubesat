@@ -128,7 +128,7 @@ N6_HEADER_VERSION ?= 2.3
 N6_SIGN_ALIGN ?= -align
 N6_PROGRAMMER_ARGS ?= -c port=SWD mode=HOTPLUG ap=1
 
-.PHONY: signed-payload flash-avionics flash-radio flash-payload flash-payload-external run-payload n6-help uart-listen
+.PHONY: signed-payload flash-avionics flash-radio flash-payload flash-payload-external run-payload n6-help uart-listen uart-view
 .PHONY: test-uart test-i2c test-thermometer test-barometer test-imu
 
 $(N6_BUILD)/payload.bin: $(N6_BUILD)/payload.elf
@@ -169,9 +169,13 @@ n6-help:
 uart-listen:
 	python3 scripts/listen_uart.py $(UART_ARGS)
 
+uart-view:
+	python3 scripts/view_imu.py $(UART_ARGS)
+
 test-uart:
 	python3 -B tests/test_uart.py
 	python3 -B tests/test_listen_uart.py
+	python3 -B tests/test_view_imu.py
 
 test-i2c:
 	python3 -B tests/test_i2c.py
