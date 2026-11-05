@@ -59,6 +59,12 @@ X/Y/Z readings in g, temperature in Celsius, and barometer pressure in hPa.
 Each sensor has its own sample-age status; missing readings show a placeholder
 and stale readings are marked. Only gyroscope rates affect the cube's rotation.
 
+Estimated altitude in meters appears below pressure and shares its sample status.
+It uses the standard-atmosphere barometric formula with a default sea-level
+reference of 1013.25 hPa (pressure altitude). Use `--sea-level-pressure 1018.0` to
+set your local sea-level reference in hPa; weather and atmospheric conditions
+affect the estimate. Missing or nonpositive pressure shows `-- m`.
+
 Install the two dependencies and run with automatic ST-LINK port selection:
 
 ```sh

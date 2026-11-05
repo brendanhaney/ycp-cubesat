@@ -8,6 +8,7 @@ Preview: python3 scripts/view_avionics.py --demo
 Startup is zero rotation. Rates are already zeroed, in body-frame deg/s;
 they are integrated into an orientation relative to startup, not compass north.
 Temperature, pressure and acceleration are displayed without affecting rotation.
+Estimated altitude uses pressure and a sea-level reference (default 1013.25 hPa).
 """
 
 import argparse
@@ -39,6 +40,7 @@ AXIS_COLORS = ((255, 111, 126), (100, 221, 164), (105, 173, 255))
 BACKGROUND = (16, 22, 32)
 TEXT = (226, 234, 245)
 MUTED = (143, 160, 182)
+DEFAULT_SEA_LEVEL_PRESSURE = 1013.25  # hPa
 VERTICES = tuple((x, y, z) for x in (-1, 1) for y in (-1, 1) for z in (-1, 1))
 EDGES = tuple((a, b) for a in range(8) for b in range(a + 1, 8)
               if sum(x != y for x, y in zip(VERTICES[a], VERTICES[b])) == 1)
@@ -53,6 +55,20 @@ def parse_telemetry(line):
             if all(math.isfinite(value) for value in values):
                 return kind, values
     return None
+
+
+def pressure_altitude(pressure_hpa, sea_level_pressure=DEFAULT_SEA_LEVEL_PRESSURE):
+    """Estimate altitude in meters using the standard-atmosphere pressure law.
+
+    Both pressures are in hPa. Missing or invalid inputs have no estimate.
+    Formula reference: Adafruit_BMP280::readAltitude():
+    https://github.com/adafruit/Adafruit_BMP280_Library/blob/master/Adafruit_BMP280.cpp
+    """
+    for value in (pressure_hpa, sea_level_pressure):
+        if value is None or not math.isfinite(value) or value <= 0:
+            return None
+    altitude = 44330.0 * (1.0 - (pressure_hpa / sea_level_pressure) ** 0.1903)
+    return altitude if math.isfinite(altitude) else None
 
 
 def multiply(q, r):
@@ -116,10 +132,17 @@ class Motion:
 class Telemetry:
     values: dict = field(default_factory=dict)
     received_at: dict = field(default_factory=dict)
+    sea_level_pressure: float = DEFAULT_SEA_LEVEL_PRESSURE
 
     def receive(self, kind, values, now):
         self.values[kind] = values
         self.received_at[kind] = now
+
+    @property
+    def altitude_m(self):
+        pressure = self.values.get("pressure")
+        return pressure_altitude(pressure[0] if pressure is not None else None,
+                                 self.sea_level_pressure)
 
 
 def receive_telemetry(motion, telemetry, kind, values, now):
@@ -177,8 +200,8 @@ def draw_scene(pygame, screen, fonts, motion, telemetry, source, now, error=None
         rect = surface.get_rect(topright=position) if right else surface.get_rect(topleft=position)
         screen.blit(surface, rect)
 
-    label("AVIONICS", (26, 22), font=title)
-    label("Orthographic / startup = zero", (27, 57), MUTED, small)
+    label("Avionics Telemetry", (26, 22), font=title)
+    label("Orthographic projection", (27, 57), MUTED, small)
 
     world_color = (68, 82, 102)
     for axis in AXES:
@@ -247,23 +270,29 @@ def draw_scene(pygame, screen, fonts, motion, telemetry, source, now, error=None
 
     for kind, heading, unit, decimals in (("temperature", "TEMPERATURE", "C", 3),
                                           ("pressure", "BAROMETER / PRESSURE", "hPa", 2)):
-        panel = pygame.Rect(width - 302, y, 280, scalar_height)
+        extra_height = 28 if kind == "pressure" else 0
+        panel = pygame.Rect(width - 302, y, 280, scalar_height + extra_height)
         pygame.draw.rect(screen, (24, 33, 47), panel, border_radius=10)
         label(heading, (width - 40, y + 10), MUTED, small, right=True)
         values = telemetry.values.get(kind)
         value = f'{values[0]:.{decimals}f} {unit}' if values is not None else f'-- {unit}'
         label(value, (width - 40, y + 32), TEXT, right=True)
+        if kind == "pressure":
+            altitude = telemetry.altitude_m
+            value = f'{altitude:.1f} m' if altitude is not None else '-- m'
+            label("Altitude (est.)", (width - 284, y + 63), MUTED, small)
+            label(value, (width - 40, y + 60), TEXT, right=True)
         status, status_color = sensor_status(kind)
-        label(status, (width - 40, y + (61 if compact else 69)),
+        label(status, (width - 40, y + (61 if compact else 69) + extra_height),
               status_color, small, right=True)
-        y += scalar_height + 12
+        y += scalar_height + extra_height + 12
 
     label("Dashed: fixed world axes    Arrows: cube body axes", (26, height - 87), MUTED, small)
     label("R  zero orientation     SPACE  pause/resume     ESC  close", (26, height - 61), TEXT, small)
     if error:
         footer = error
     else:
-        footer = f"{source}  |  Rotation: gyroscope only; reference = startup/reset."
+        footer = f"{source}  |  Rotation: gyroscope only;"
     label(footer[:130], (26, height - 33), MUTED, small)
 
 
@@ -273,9 +302,13 @@ def main(argv=None):
     parser.add_argument("--baud", type=int, default=115200, help="baud rate (default: 115200)")
     parser.add_argument("--list-ports", action="store_true", help="list serial ports and exit")
     parser.add_argument("--demo", action="store_true", help="preview telemetry and rotation without a connected board")
+    parser.add_argument("--sea-level-pressure", type=float, default=DEFAULT_SEA_LEVEL_PRESSURE,
+                        metavar="HPA", help="reference pressure for altitude (default: 1013.25 hPa)")
     args = parser.parse_args(argv)
     if args.baud <= 0:
         parser.error("--baud must be positive")
+    if not math.isfinite(args.sea_level_pressure) or args.sea_level_pressure <= 0:
+        parser.error("--sea-level-pressure must be finite and positive")
 
     connection = None
     pygame = None
@@ -308,7 +341,7 @@ def main(argv=None):
                  pygame.font.SysFont("dejavusansmono", 18),
                  pygame.font.SysFont("dejavusans", 25, bold=True))
         motion = Motion()
-        telemetry = Telemetry()
+        telemetry = Telemetry(sea_level_pressure=args.sea_level_pressure)
         buffer = bytearray()
         clock = pygame.time.Clock()
         error = None
