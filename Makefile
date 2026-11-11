@@ -14,6 +14,7 @@ H7_BUILD ?= $(BUILD)/stm32h7
 N6_BUILD ?= $(BUILD)/stm32n6
 RENODE_BUILD ?= $(BUILD)/renode
 NUCLEO_BUILD ?= $(BUILD)/nucleo-h753zi
+PAYLOAD_BOARD ?= NUCLEO-N657X0-Q
 RESC_DIR = ./venv
 
 FIRMWARE_CFLAGS = $(filter-out -mcpu=% -march=% -mfpu=% -mfloat-abi=% -mcmse -mno-cmse -mthumb -marm,$(CFLAGS))
@@ -49,6 +50,8 @@ $(eval $(call firmware,payload,stm32n6,$(N6_BUILD)))
 $(foreach module,avionics radio payload,$(eval $(call firmware,$(module),stm32h7,$(RENODE_BUILD))))
 $(foreach module,avionics radio,$(eval $(call firmware,$(module),stm32h7,$(NUCLEO_BUILD),-DCUBESAT_NUCLEO_H753ZI)))
 
+payload:
+	$(MAKE) -f scripts/payload.mk BUILD="$(BUILD)" PAYLOAD_BOARD="$(PAYLOAD_BOARD)"
 .PHONY: all avionics radio payload renode renode-avionics renode-radio renode-payload clean FORCE
 .PHONY: nucleo-avionics nucleo-radio nucleo-payload
 
@@ -90,11 +93,25 @@ $(BUILD)/test-spi-model: $(SPI_MODEL) $(RESC_DIR)/peripherals/spi_model.h tests/
 	@mkdir -p $(BUILD)
 	$(HOST_CC) $(HOST_CFLAGS) -I$(RESC_DIR)/peripherals $(SPI_MODEL) tests/test_spi_model.c -o $@
 
-.PHONY: sim sim-headless sim-avionics sim-radio sim-payload test test-build test-platform
+sim: all $(BUILD)/spi-renode sim-payload
+	python3 $(RESC_DIR)/run_spi.py --build $(BUILD) --module avionics-radio
+
+sim-headless: all $(BUILD)/spi-renode sim-payload
+	python3 $(RESC_DIR)/run_spi.py --build $(BUILD) --module avionics-radio --headless
+
+sim-avionics: avionics $(BUILD)/spi-renode
+	python3 $(RESC_DIR)/run_spi.py --build $(BUILD) --module avionics
 
 sim: renode $(RENODE_BUILD)/spi-renode
 	python3 $(RESC_DIR)/run_spi.py --build $(RENODE_BUILD)
 
+sim-payload: payload
+	python3 -B tests/test_payload_renode.py --build $(BUILD)/payload-renode
+
+# The legacy firmware SPI integration test expects an avionics SPI demo;
+# current avionics firmware runs the sensor polling loop instead.
+test: all test-uart test-i2c test-thermometer test-barometer test-payload $(BUILD)/test-spi-model
+	$(BUILD)/test-spi-model
 sim-headless: renode $(RENODE_BUILD)/spi-renode
 	python3 $(RESC_DIR)/run_spi.py --build $(RENODE_BUILD) --headless
 
@@ -107,6 +124,14 @@ sim-radio: renode-radio $(RENODE_BUILD)/spi-renode
 sim-payload: renode-payload $(RENODE_BUILD)/spi-renode
 	python3 $(RESC_DIR)/run_spi.py --build $(RENODE_BUILD) --module payload
 
+# Keep board binaries separate from the USART1 images used by Renode.
+nucleo-avionics nucleo-radio: nucleo-%:
+	$(MAKE) $* BUILD="$(NUCLEO_BUILD)" CPPFLAGS="$(CPPFLAGS) -DCUBESAT_NUCLEO_H753ZI"
+
+nucleo-payload: payload
+
+flash-avionics flash-radio: flash-%: nucleo-%
+	$(FLASH_TOOL) --reset write $(NUCLEO_BUILD)/$*.rom $(FLASH_ADDR)
 test: all test-build test-platform test-uart test-i2c test-thermometer test-barometer test-imu $(BUILD)/test-spi-model
 	$(BUILD)/test-spi-model
 
@@ -166,6 +191,9 @@ n6-help:
 	@echo "N6_SIGN_ALIGN=-align is required for CubeProgrammer 2.21+; use N6_SIGN_ALIGN= with older versions."
 	@echo "N6_HEADER_VERSION defaults to 2.3; select the header version required by your silicon revision."
 
+flash-payload:
+	@echo "Payload flashing implemented in another branch"
+
 uart-listen:
 	python3 scripts/listen_uart.py $(UART_ARGS)
 
@@ -187,5 +215,14 @@ test-thermometer:
 test-barometer:
 	python3 -B tests/test_ms5611.py
 
+.PHONY: test-payload test-payload-drivers
+
+test-payload: payload test-payload-drivers
+	python3 -B tests/test_payload_layout.py --elf $(BUILD)/payload.elf --board $(PAYLOAD_BOARD)
+	python3 -B tests/test_payload_renode.py --build $(BUILD)/payload-renode
+
+test-payload-drivers:
+	python3 -B tests/test_camera_conversion.py
+	python3 -B tests/test_payload_storage.py
 test-imu:
 	python3 -B tests/test_bmi270.py

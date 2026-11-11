@@ -1,0 +1,5 @@
+/home/baia/CubeSat/Payload/firmware/N657/snapshot_test/Src/app_cam.c:165:6:CAM_Init	9
+/home/baia/CubeSat/Payload/firmware/N657/snapshot_test/Src/app_cam.c:190:6:CAM_CapturePipe_Start	1
+/home/baia/CubeSat/Payload/firmware/N657/snapshot_test/Src/app_cam.c:198:6:CAM_IspUpdate	1
+/home/baia/CubeSat/Payload/firmware/N657/snapshot_test/Src/app_cam.c:206:6:CAM_Deinit	1
+/home/baia/CubeSat/Payload/firmware/N657/snapshot_test/Src/app_cam.c:214:6:CMW_CAMERA_PIPE_ErrorCallback	1
