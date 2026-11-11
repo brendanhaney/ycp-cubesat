@@ -105,6 +105,10 @@ def hotplug_connection(connection):
     return result
 
 
+def core_is_active(output):
+    return "Core is running" in output or "Core is in sleep mode" in output
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--programmer", required=True)
@@ -131,7 +135,7 @@ def main(argv=None):
         result = program(command)
         if result.returncode:
             return result.returncode
-        if "Core is running" not in result.stdout:
+        if not core_is_active(result.stdout):
             print("Payload did not start: no running core reported. Power-cycle the board and retry.",
                   file=sys.stderr)
             return 1
@@ -142,7 +146,7 @@ def main(argv=None):
     if status.returncode:
         return status.returncode
     counter = re.search(r"\bPC\s*=\s*(0x[0-9a-fA-F]+)", status.stdout)
-    if ("Core is running" not in status.stdout or counter is None or
+    if (not core_is_active(status.stdout) or counter is None or
             not STM32N6_VECTOR_BASE <= int(counter[1], 16) < STM32N6_SRAM_END):
         print("Payload did not remain running in STM32N6 SRAM.",
               file=sys.stderr)

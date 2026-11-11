@@ -23,11 +23,33 @@
 
 #define USE_DCACHE
 
-void app_run(void);
+typedef enum {
+    PAYLOAD_OK = 0,
+    PAYLOAD_BUSY = -1,
+    PAYLOAD_TIMEOUT = -2,
+    PAYLOAD_CAMERA_ERROR = -3,
+    PAYLOAD_JPEG_ERROR = -4,
+    PAYLOAD_STORAGE_ERROR = -5,
+    PAYLOAD_INVALID_ARGUMENT = -6,
+    PAYLOAD_NOT_INITIALIZED = -7,
+} payload_status_t;
 
-/* Set request to retain the next completed frame. Ready is set after JPEG
- * encoding and the SD save attempt. Set release before requesting again.
- * All addresses are target addresses; inspect save diagnostics for SD errors. */
+typedef struct {
+    const uint8_t *data;
+    uint32_t length;
+    uint32_t width;
+    uint32_t height;
+} payload_image_t;
+
+payload_status_t payload_camera_init(void);
+payload_status_t payload_camera_poll(void);
+payload_status_t payload_take_jpeg(payload_image_t *image, uint32_t timeout_ms);
+payload_status_t payload_save_jpeg(const payload_image_t *image);
+void payload_release_image(void);
+void app_capture_step(int automatic_capture);
+
+extern volatile int32_t debug_capture_status;
+
 extern volatile uint32_t debug_capture_request;
 extern volatile uint32_t debug_capture_ready;
 extern volatile uint32_t debug_capture_addr;
