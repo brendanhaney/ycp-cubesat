@@ -1,4 +1,4 @@
-$global.radio_elf ?= @build/radio.elf
+$global.radio_elf ?= @build/renode/radio.elf
 mach create "radio"
 machine LoadPlatformDescription @platforms/cpus/stm32h7.repl
 machine UnregisterFromParent sysbus.spi4

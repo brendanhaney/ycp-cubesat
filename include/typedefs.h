@@ -5,5 +5,6 @@
 #include <stdint.h>
 
 typedef unsigned char byte_t;
+typedef uint32_t bitset_t;
 
 #endif

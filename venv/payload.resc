@@ -1,7 +1,4 @@
-# Run `make sim-payload` first to build the application verification image.
-# The installed Renode has no complete N657 camera/JPEG/SD SoC model.
-$global.payload_elf ?= @build/payload-renode/payload-test.elf
-$global.payload_card ?= @build/payload-renode/card.img
+$global.payload_elf ?= @build/renode/payload.elf
 mach create "payload"
 machine LoadPlatformDescription @venv/payload_camera.repl
 showAnalyzer sysbus.usart1
