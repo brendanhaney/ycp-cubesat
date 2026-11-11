@@ -14,11 +14,11 @@ H7_BUILD ?= $(BUILD)/stm32h7
 N6_BUILD ?= $(BUILD)/stm32n6
 RENODE_BUILD ?= $(BUILD)/renode
 NUCLEO_BUILD ?= $(BUILD)/nucleo-h753zi
+PAYLOAD_BOARD ?= NUCLEO-N657X0-Q
 RESC_DIR = ./venv
 
 FIRMWARE_CFLAGS = $(filter-out -mcpu=% -march=% -mfpu=% -mfloat-abi=% -mcmse -mno-cmse -mthumb -marm,$(CFLAGS))
 stm32h7_FLAGS = -mcpu=cortex-m7 -mthumb -mfloat-abi=soft -DCUBESAT_STM32H7
-stm32n6_FLAGS = -mcpu=cortex-m55+nomve -mthumb -mfloat-abi=soft -mcmse -DCUBESAT_STM32N6
 COMMON_SOURCES = src/drivers/uart.c src/drivers/spi.c \
                  $(wildcard src/utils/*.c) src/drivers/startup.c
 stm32h7_SOURCES = src/drivers/i2c.c src/drivers/tmp117.c src/drivers/ms5611.c \
@@ -45,12 +45,18 @@ endef
 
 $(eval $(call firmware,avionics,stm32h7,$(H7_BUILD)))
 $(eval $(call firmware,radio,stm32h7,$(H7_BUILD)))
-$(eval $(call firmware,payload,stm32n6,$(N6_BUILD)))
-$(foreach module,avionics radio payload,$(eval $(call firmware,$(module),stm32h7,$(RENODE_BUILD))))
+$(foreach module,avionics radio,$(eval $(call firmware,$(module),stm32h7,$(RENODE_BUILD))))
 $(foreach module,avionics radio,$(eval $(call firmware,$(module),stm32h7,$(NUCLEO_BUILD),-DCUBESAT_NUCLEO_H753ZI)))
 
 .PHONY: all avionics radio payload renode renode-avionics renode-radio renode-payload clean FORCE
 .PHONY: nucleo-avionics nucleo-radio nucleo-payload
+.PHONY: sim sim-headless sim-avionics sim-radio sim-payload test test-build test-platform
+
+$(N6_BUILD)/payload.elf: FORCE
+	$(MAKE) -f scripts/payload.mk BUILD="$(N6_BUILD)" PAYLOAD_BOARD="$(PAYLOAD_BOARD)" "$@"
+
+$(N6_BUILD)/payload.rom: $(N6_BUILD)/payload.elf
+	$(OBJCOPY) -O binary $< $@
 
 all: avionics radio payload
 avionics: $(H7_BUILD)/avionics.rom
@@ -59,7 +65,8 @@ payload: $(N6_BUILD)/payload.rom
 renode: renode-avionics renode-radio renode-payload
 renode-avionics: $(RENODE_BUILD)/avionics.rom
 renode-radio: $(RENODE_BUILD)/radio.rom
-renode-payload: $(RENODE_BUILD)/payload.rom
+renode-payload: payload
+	python3 -B tests/test_payload_renode.py --build $(RENODE_BUILD)/payload-renode
 nucleo-avionics: $(NUCLEO_BUILD)/avionics.rom
 nucleo-radio: $(NUCLEO_BUILD)/radio.rom
 nucleo-payload: payload
@@ -90,12 +97,10 @@ $(BUILD)/test-spi-model: $(SPI_MODEL) $(RESC_DIR)/peripherals/spi_model.h tests/
 	@mkdir -p $(BUILD)
 	$(HOST_CC) $(HOST_CFLAGS) -I$(RESC_DIR)/peripherals $(SPI_MODEL) tests/test_spi_model.c -o $@
 
-.PHONY: sim sim-headless sim-avionics sim-radio sim-payload test test-build test-platform
-
-sim: renode $(RENODE_BUILD)/spi-renode
+sim: renode-avionics renode-radio payload $(RENODE_BUILD)/spi-renode
 	python3 $(RESC_DIR)/run_spi.py --build $(RENODE_BUILD)
 
-sim-headless: renode $(RENODE_BUILD)/spi-renode
+sim-headless: renode-avionics renode-radio payload $(RENODE_BUILD)/spi-renode
 	python3 $(RESC_DIR)/run_spi.py --build $(RENODE_BUILD) --headless
 
 sim-avionics: renode-avionics $(RENODE_BUILD)/spi-renode
@@ -104,10 +109,9 @@ sim-avionics: renode-avionics $(RENODE_BUILD)/spi-renode
 sim-radio: renode-radio $(RENODE_BUILD)/spi-renode
 	python3 $(RESC_DIR)/run_spi.py --build $(RENODE_BUILD) --module radio
 
-sim-payload: renode-payload $(RENODE_BUILD)/spi-renode
-	python3 $(RESC_DIR)/run_spi.py --build $(RENODE_BUILD) --module payload
+sim-payload: renode-payload
 
-test: all test-build test-platform test-uart test-i2c test-thermometer test-barometer test-imu $(BUILD)/test-spi-model
+test: all test-build test-platform test-uart test-i2c test-thermometer test-barometer test-imu test-payload $(BUILD)/test-spi-model
 	$(BUILD)/test-spi-model
 
 test-build:
@@ -127,8 +131,12 @@ N6_FLASH_ADDR ?= 0x70000000
 N6_HEADER_VERSION ?= 2.3
 N6_SIGN_ALIGN ?= -align
 N6_PROGRAMMER_ARGS ?= -c port=SWD mode=HOTPLUG ap=1
+PAYLOAD_CAPTURE_OUTPUT ?= $(BUILD)/captures
+PAYLOAD_CAPTURE_COUNT ?= 1
+PAYLOAD_CAPTURE_TIMEOUT ?= 30
+PAYLOAD_CAPTURE_ARGS ?=
 
-.PHONY: signed-payload flash-avionics flash-radio flash-payload flash-payload-external run-payload n6-help uart-listen uart-view
+.PHONY: signed-payload flash-avionics flash-radio flash-payload flash-payload-external run-payload capture-payload n6-help uart-listen uart-view
 .PHONY: test-uart test-i2c test-thermometer test-barometer test-imu
 
 $(N6_BUILD)/payload.bin: $(N6_BUILD)/payload.elf
@@ -149,7 +157,14 @@ flash-payload: run-payload
 
 run-payload: payload
 	@command -v "$(STM32_PROGRAMMER)" >/dev/null || { echo "Install STM32CubeProgrammer and set STM32_PROGRAMMER to its CLI executable." >&2; exit 1; }
-	python3 -B scripts/run_payload.py --programmer "$(STM32_PROGRAMMER)" --elf "$(N6_BUILD)/payload.elf" -- $(N6_PROGRAMMER_ARGS)
+	python3 -B scripts/run_payload.py --programmer "$(STM32_PROGRAMMER)" --elf "$(N6_BUILD)/payload.elf" --board "$(PAYLOAD_BOARD)" -- $(N6_PROGRAMMER_ARGS)
+
+capture-payload: payload
+	@command -v "$(STM32_PROGRAMMER)" >/dev/null || { echo "Install STM32CubeProgrammer and set STM32_PROGRAMMER to its CLI executable." >&2; exit 1; }
+	python3 -B scripts/capture_payload.py --programmer "$(STM32_PROGRAMMER)" \
+		--elf "$(N6_BUILD)/payload.elf" --board "$(PAYLOAD_BOARD)" \
+		--output "$(PAYLOAD_CAPTURE_OUTPUT)" --count "$(PAYLOAD_CAPTURE_COUNT)" \
+		--timeout "$(PAYLOAD_CAPTURE_TIMEOUT)" $(PAYLOAD_CAPTURE_ARGS) -- $(N6_PROGRAMMER_ARGS)
 
 flash-payload-external: signed-payload
 	@command -v "$(STM32_PROGRAMMER)" >/dev/null || { echo "Install STM32CubeProgrammer and set STM32_PROGRAMMER to its CLI executable." >&2; exit 1; }
@@ -161,6 +176,8 @@ n6-help:
 	@echo "make payload: build the SRAM executable at $(N6_BUILD)/payload.elf."
 	@echo "make run-payload (or make flash-payload): load, verify and start the payload in SRAM over ST-LINK."
 	@echo "Repeat run-payload after reset or power loss. No signing tool or external loader is needed for SRAM."
+	@echo "make capture-payload: request a capture from the running payload and verify JPEG/SD readback into $(PAYLOAD_CAPTURE_OUTPUT)."
+	@echo "Set PAYLOAD_CAPTURE_COUNT to repeat captures and PAYLOAD_CAPTURE_TIMEOUT to change the wait limit."
 	@echo "make signed-payload: create $(N6_BUILD)/payload-trusted.bin with STM32CubeProgrammer's signing tool."
 	@echo "make flash-payload-external: program persistent external flash; standalone boot requires BOOT0=0 and BOOT1=0."
 	@echo "N6_SIGN_ALIGN=-align is required for CubeProgrammer 2.21+; use N6_SIGN_ALIGN= with older versions."
@@ -186,6 +203,22 @@ test-thermometer:
 
 test-barometer:
 	python3 -B tests/test_ms5611.py
+
+.PHONY: test-payload test-payload-drivers test-payload-launcher test-capture-payload
+
+test-payload: payload test-payload-drivers test-payload-launcher test-capture-payload
+	python3 -B tests/test_payload_layout.py --elf $(N6_BUILD)/payload.elf --board $(PAYLOAD_BOARD)
+	python3 -B tests/test_payload_renode.py --build $(RENODE_BUILD)/payload-renode
+
+test-payload-drivers:
+	python3 -B tests/test_camera_conversion.py
+	python3 -B tests/test_payload_storage.py
+
+test-payload-launcher:
+	python3 -B tests/test_run_payload.py
+
+test-capture-payload:
+	python3 -B tests/test_capture_payload.py
 
 test-imu:
 	python3 -B tests/test_bmi270.py
