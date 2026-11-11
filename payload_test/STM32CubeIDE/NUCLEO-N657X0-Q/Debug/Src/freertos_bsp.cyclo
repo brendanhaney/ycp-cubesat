@@ -1,7 +1,0 @@
-/home/baia/CubeSat/Payload/firmware/N657/snapshot_test/Src/freertos_bsp.c:31:10:HAL_GetTick	1
-/home/baia/CubeSat/Payload/firmware/N657/snapshot_test/Src/freertos_bsp.c:36:6:HAL_Delay	1
-/home/baia/CubeSat/Payload/firmware/N657/snapshot_test/Src/freertos_bsp.c:44:19:HAL_InitTick	1
-/home/baia/CubeSat/Payload/firmware/N657/snapshot_test/Src/freertos_bsp.c:49:6:TIM4_Config	1
-/home/baia/CubeSat/Payload/firmware/N657/snapshot_test/Src/freertos_bsp.c:68:10:TIM4_Get_Value	1
-/home/baia/CubeSat/Payload/firmware/N657/snapshot_test/Src/freertos_bsp.c:74:6:vApplicationGetIdleTaskMemory	1
-/home/baia/CubeSat/Payload/firmware/N657/snapshot_test/Src/freertos_bsp.c:84:6:vApplicationGetTimerTaskMemory	1

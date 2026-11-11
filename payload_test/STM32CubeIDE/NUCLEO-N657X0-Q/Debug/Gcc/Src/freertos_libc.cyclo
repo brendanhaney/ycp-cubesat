@@ -1,3 +1,0 @@
-/home/baia/CubeSat/Payload/firmware/N657/snapshot_test/Gcc/Src/freertos_libc.c:34:6:freertos_libc_init	1
-/home/baia/CubeSat/Payload/firmware/N657/snapshot_test/Gcc/Src/freertos_libc.c:42:6:__malloc_lock	2
-/home/baia/CubeSat/Payload/firmware/N657/snapshot_test/Gcc/Src/freertos_libc.c:56:6:__malloc_unlock	2
