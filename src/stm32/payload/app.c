@@ -21,6 +21,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "app_cam.h"
 #include "app_config.h"
@@ -385,6 +386,9 @@ volatile uint32_t debug_jpeg_sd_done = 0;
 volatile uint32_t debug_jpeg_sd_index = 0;
 volatile uint32_t debug_jpeg_sd_saved_count = 0;
 volatile uint32_t debug_jpeg_sd_no_slot = 0;
+volatile uint32_t debug_jpeg_sd_verify_status = 0xFFFFFFFFU;
+volatile uint32_t debug_jpeg_sd_verified_bytes = 0;
+volatile uint32_t debug_jpeg_sd_verified = 0;
 
 char debug_jpeg_sd_filename[20];
 
@@ -666,6 +670,40 @@ static void uvc_thread_fct(void *arg) {
     }
 }
 
+static void JPEG_VerifyOnSD(void) {
+    FIL file;
+    uint8_t data[512];
+    UINT bytes_read;
+    uint32_t offset = 0;
+    int matches;
+
+    debug_jpeg_sd_verify_status = f_open(&file, debug_jpeg_sd_filename, FA_READ);
+    if (debug_jpeg_sd_verify_status != FR_OK)
+        return;
+
+    matches = f_size(&file) == debug_jpeg_len;
+    while (matches && offset < debug_jpeg_len) {
+        const UINT remaining = debug_jpeg_len - offset;
+        const UINT count = remaining < sizeof(data) ? remaining : sizeof(data);
+
+        debug_jpeg_sd_verify_status = f_read(&file, data, count, &bytes_read);
+        if (debug_jpeg_sd_verify_status != FR_OK || bytes_read != count) {
+            matches = 0;
+            break;
+        }
+
+        debug_jpeg_sd_verified_bytes += bytes_read;
+        matches = memcmp(data, debug_jpeg_buffer + offset, count) == 0;
+        offset += bytes_read;
+    }
+
+    const FRESULT close_status = f_close(&file);
+    if (debug_jpeg_sd_verify_status == FR_OK)
+        debug_jpeg_sd_verify_status = close_status;
+
+    debug_jpeg_sd_verified = matches && offset == debug_jpeg_len && close_status == FR_OK;
+}
+
 static void JPEG_SaveToSD(void) {
     UINT bytes_written = 0;
     uint32_t image_num;
@@ -679,6 +717,9 @@ static void JPEG_SaveToSD(void) {
     debug_jpeg_sd_bytes = 0;
     debug_jpeg_sd_index = 0;
     debug_jpeg_sd_no_slot = 0;
+    debug_jpeg_sd_verify_status = 0xFFFFFFFFU;
+    debug_jpeg_sd_verified_bytes = 0;
+    debug_jpeg_sd_verified = 0;
 
     /* Verify that the JPEG length is valid */
     if (debug_jpeg_len == 0 || debug_jpeg_len > sizeof(debug_jpeg_buffer)) {
@@ -729,6 +770,7 @@ static void JPEG_SaveToSD(void) {
     if (debug_jpeg_sd_write == FR_OK && bytes_written == debug_jpeg_len &&
         debug_jpeg_sd_close == FR_OK) {
         debug_jpeg_sd_saved_count++;
+        JPEG_VerifyOnSD();
     }
 
     debug_jpeg_sd_done = 1;
@@ -798,7 +840,13 @@ static void standalone_camera_step(void) {
         /* Save compressed JPEG to microSD */
         JPEG_SaveToSD();
 
-        /* Mark capture complete only after JPEG encoding */
+        /* Flash the green LED once for each captured image. */
+        BSP_LED_On(LED_GREEN);
+        HAL_Delay(100);
+        BSP_LED_Off(LED_GREEN);
+
+        /* Publish the JPEG and SD results before the debugger sees ready. */
+        __DMB();
         debug_capture_ready = 1;
         debug_capture_request = 0;
 
@@ -814,8 +862,27 @@ static void standalone_camera_thread_fct(void *arg) {
     (void)arg;
     standalone_camera_init();
 
+    const TickType_t capture_interval = pdMS_TO_TICKS(5000);
+    TickType_t last_capture = xTaskGetTickCount();
+    int automatic_capture = 0;
+
     while (1) {
+        const TickType_t now = xTaskGetTickCount();
+
+        if (!debug_capture_request && !debug_capture_ready &&
+            (TickType_t)(now - last_capture) >= capture_interval) {
+            last_capture = now;
+            automatic_capture = 1;
+            debug_capture_request = 1;
+        }
+
         standalone_camera_step();
+
+        /* Return automatic captures after encoding and saving to microSD. */
+        if (automatic_capture && debug_capture_ready) {
+            debug_release_frame();
+            automatic_capture = 0;
+        }
     }
 }
 
@@ -905,7 +972,7 @@ void app_run() {
                             capture_priority, capture_thread_stack, &capture_thread);
     assert(hdl != NULL);
 
-    BSP_LED_On(LED_GREEN);
+    BSP_LED_Off(LED_GREEN);
 }
 
 int CMW_CAMERA_PIPE_FrameEventCallback(uint32_t pipe) {

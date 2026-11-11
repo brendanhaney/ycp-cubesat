@@ -46,6 +46,9 @@ extern volatile uint32_t debug_jpeg_sd_done;
 extern volatile uint32_t debug_jpeg_sd_index;
 extern volatile uint32_t debug_jpeg_sd_saved_count;
 extern volatile uint32_t debug_jpeg_sd_no_slot;
+extern volatile uint32_t debug_jpeg_sd_verify_status;
+extern volatile uint32_t debug_jpeg_sd_verified_bytes;
+extern volatile uint32_t debug_jpeg_sd_verified;
 extern char debug_jpeg_sd_filename[20];
 
 #endif

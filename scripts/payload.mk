@@ -1,14 +1,22 @@
+ifeq ($(origin CC),default)
 CC = arm-none-eabi-gcc
-OBJCOPY = arm-none-eabi-objcopy
-SIZE = arm-none-eabi-size
+endif
+CC ?= arm-none-eabi-gcc
+OBJCOPY ?= arm-none-eabi-objcopy
+SIZE ?= arm-none-eabi-size
 
 .DEFAULT_GOAL := all
+.DELETE_ON_ERROR:
 
 BUILD ?= build
 PAYLOAD_BOARD ?= NUCLEO-N657X0-Q
 PAYLOAD_ORIENTATION ?= FRONT
 PAYLOAD_CFLAGS ?= -Os -g3
 PAYLOAD_DEFINES ?=
+
+ifneq ($(filter -DCUBESAT_NUCLEO_H753ZI -DCUBESAT_STM32H7,$(CPPFLAGS) $(PAYLOAD_DEFINES)),)
+$(error NUCLEO-H753ZI requires STM32H7; payload firmware requires STM32N6)
+endif
 
 PAYLOAD_APP = src/stm32/payload
 PAYLOAD_DRIVERS = src/drivers/payload
@@ -33,7 +41,7 @@ PAYLOAD_CPPFLAGS = -DSTM32N657xx -DUSE_FULL_ASSERT -DUSE_FULL_LL_DRIVER \
                   -DUSE_VD55G1_SENSOR -DUSE_VD1943_SENSOR \
                   -DUVC_LIB_USE_DMA -DUVC_LIB_USE_USBX -DUX_INCLUDE_USER_DEFINE_FILE \
                   -DUSBL_PACKET_PER_MICRO_FRAME=3 -DUX_STANDALONE \
-                  -DUVCL_USBX_USE_FREERTOS $(PAYLOAD_DEFINES)
+                  -DUVCL_USBX_USE_FREERTOS $(CPPFLAGS) $(PAYLOAD_DEFINES)
 
 ifeq ($(PAYLOAD_BOARD),NUCLEO-N657X0-Q)
 PAYLOAD_CPPFLAGS += -DSTM32N6570_NUCLEO_REV
