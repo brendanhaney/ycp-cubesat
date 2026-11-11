@@ -1,0 +1,27 @@
+// Application verification platform, not a complete STM32N657 SoC model.
+// Real Cortex-M55 and NVIC run the production FreeRTOS scheduler. Tests replace
+// board boot, camera input, the JPEG hardware boundary, and SD block transport.
+cpu: CPU.CortexM @ sysbus
+    cpuType: "cortex-m55"
+    nvic: nvic
+    numberOfMPURegions: 16
+
+nvic: IRQControllers.NVIC @ sysbus 0xe000e000
+    priorityMask: 0xf0
+    systickFrequency: 64000000
+    -> cpu@0
+
+ram: Memory.MappedMemory @ sysbus 0x34000000
+    size: 0x400000
+
+card: Memory.MappedMemory @ sysbus 0x60000000
+    size: 0x800000
+
+clockRegisters: Memory.MappedMemory @ sysbus 0x56020000
+    size: 0x10000
+
+usart1: UART.STM32F7_USART @ sysbus 0x52001000
+    frequency: 64000000
+
+dwt: Miscellaneous.DWT @ sysbus 0xe0001000
+    frequency: 64000000
