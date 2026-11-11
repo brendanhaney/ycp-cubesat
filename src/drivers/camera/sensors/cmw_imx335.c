@@ -24,9 +24,7 @@
 #include "cmw_camera.h"
 #include "imx335_reg.h"
 #include "imx335.h"
-#ifndef ISP_MW_TUNING_TOOL_SUPPORT
 #include "isp_param_conf.h"
-#endif
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 
@@ -235,12 +233,10 @@ void CMW_IMX335_SetDefaultSensorValues(CMW_IMX335_config_t *imx335_config)
 
 static int32_t CMW_IMX335_Start(void *io_ctx)
 {
-#ifndef ISP_MW_TUNING_TOOL_SUPPORT
   int ret;
   /* Statistic area is provided with null value so that it force the ISP Library to get the statistic
    * area information from the tuning file.
    */
-  (void) ISP_IQParamCacheInit; /* unused */
   ret = ISP_Init(&((CMW_IMX335_t *)io_ctx)->hIsp, ((CMW_IMX335_t *)io_ctx)->hdcmipp, 0, &((CMW_IMX335_t *)io_ctx)->appliHelpers, &ISP_IQParamCacheInit_IMX335);
   if (ret != ISP_OK)
   {
@@ -252,20 +248,17 @@ static int32_t CMW_IMX335_Start(void *io_ctx)
   {
       return CMW_ERROR_PERIPH_FAILURE;
   }
-#endif
   return IMX335_Start(&((CMW_IMX335_t *)io_ctx)->ctx_driver);
 }
 
 static int32_t CMW_IMX335_Run(void *io_ctx)
 {
-#ifndef ISP_MW_TUNING_TOOL_SUPPORT
   int ret;
   ret = ISP_BackgroundProcess(&((CMW_IMX335_t *)io_ctx)->hIsp);
   if (ret != ISP_OK)
   {
       return CMW_ERROR_PERIPH_FAILURE;
   }
-#endif
   return CMW_ERROR_NONE;
 }
 
@@ -305,7 +298,6 @@ static void CMW_IMX335_PowerOn(CMW_IMX335_t *io_ctx)
 
 static void CMW_IMX335_VsyncEventCallback(void *io_ctx, uint32_t pipe)
 {
-#ifndef ISP_MW_TUNING_TOOL_SUPPORT
   /* Update the ISP frame counter and call its statistics handler */
   switch (pipe)
   {
@@ -320,7 +312,6 @@ static void CMW_IMX335_VsyncEventCallback(void *io_ctx, uint32_t pipe)
       ISP_IncAncillaryFrameId(&((CMW_IMX335_t *)io_ctx)->hIsp);
       break;
   }
-#endif
 }
 
 static void CMW_IMX335_FrameEventCallback(void *io_ctx, uint32_t pipe)

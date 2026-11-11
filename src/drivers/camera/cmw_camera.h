@@ -54,81 +54,23 @@ extern "C" {
 #define CMW_MIRRORFLIP_MIRROR        0x02U   /* Set camera mirror config        */
 #define CMW_MIRRORFLIP_FLIP_MIRROR   0x03U   /* Set camera flip + mirror config */
 
-
 typedef enum {
-  CMW_UNKNOWN_Sensor = 0x0,
-  CMW_VD66GY_Sensor,
-  CMW_VD56G3_Sensor,
-  CMW_IMX335_Sensor,
-  CMW_OV5640_Sensor,
-  CMW_VD55G1_Sensor,
-  CMW_VD65G4_Sensor,
-  CMW_VD1943_Sensor,
-  CMW_VD5943_Sensor
+  CMW_UNKNOWN_Sensor = 0,
+  CMW_IMX335_Sensor = 3
 } CMW_Sensor_Name_t;
 
 typedef struct
 {
-  uint32_t pixel_format;  /*!< This parameter can be a value from @ref CMW_PIXEL_FORMAT */
-  int line_len;
-} CMW_VD66GY_config_t;
-
-typedef struct
-{
-  uint32_t pixel_format;  /*!< This parameter can be a value from @ref CMW_PIXEL_FORMAT */
-  int line_len;
-} CMW_VD56G3_config_t;
-
-typedef struct
-{
-  uint32_t pixel_format; /*!< This parameter can be a value from @ref CMW_PIXEL_FORMAT */
-  uint32_t CSI_PHYBitrate;
-} CMW_VD55G1_config_t;
-
-typedef struct
-{
-  uint32_t pixel_format; /*!< This parameter can be a value from @ref CMW_PIXEL_FORMAT */
-  uint32_t CSI_PHYBitrate;
-} CMW_VD65G4_config_t;
-
-typedef struct
-{
-  uint32_t pixel_format; /*!< This parameter can be a value from @ref CMW_PIXEL_FORMAT */
-  uint32_t CSI_PHYBitrate;
-} CMW_VD1943_config_t;
-
-typedef struct
-{
-  uint32_t pixel_format; /*!< This parameter can be a value from @ref CMW_PIXEL_FORMAT */
-  uint32_t CSI_PHYBitrate;
-} CMW_VD5943_config_t;
-
-typedef struct
-{
-  uint32_t pixel_format; /*!< This parameter can be a value from @ref CMW_PIXEL_FORMAT */
+  uint32_t pixel_format;
 } CMW_IMX335_config_t;
-
-typedef struct
-{
-  uint32_t pixel_format; /*!< This parameter can be a value from @ref CMW_PIXEL_FORMAT */
-} CMW_OV5640_config_t;
-
 
 typedef struct
 {
   CMW_Sensor_Name_t selected_sensor;
   union {
     CMW_IMX335_config_t imx335_config;
-    CMW_VD66GY_config_t vd66gy_config;
-    CMW_VD56G3_config_t vd56g3_config;
-    CMW_VD55G1_config_t vd55g1_config;
-    CMW_VD65G4_config_t vd65g4_config;
-    CMW_VD1943_config_t vd1943_config;
-    CMW_VD5943_config_t vd5943_config;
-    CMW_OV5640_config_t ov5640_config;
   } config_sensor;
 } CMW_Advanced_Config_t;
-
 
 typedef enum {
   CMW_Aspect_ratio_crop = 0x0,
@@ -165,7 +107,6 @@ typedef struct {
   /* You must fill manual_conf when mode is CMW_Aspect_ratio_manual_roi */
   CMW_Manual_roi_area_t manual_conf;
 } CMW_DCMIPP_Conf_t;
-
 
 /* Camera exposure mode
 * Some cameras embed their own Auto Exposure algorithm.

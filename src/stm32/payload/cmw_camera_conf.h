@@ -25,26 +25,8 @@ extern "C" {
 #endif
 
 /* Includes ------------------------------------------------------------------*/
-#if defined(STM32N657xx)
 #include "stm32n6xx_hal.h"
-#ifdef STM32N6570_NUCLEO_REV
 #include "stm32n6xx_nucleo_bus.h"
-#else
-#include "stm32n6570_discovery_bus.h"
-#endif
-#elif defined(STM32MP257Fxx)
-#include "stm32mp2xx_hal.h"
-#include "stm32mp257f_eval_bus.h"
-#else
-#error Add header files for your specific board
-#endif
-
-/* ########################## Module Selection ############################## */
-/**
- * @brief This is the list of modules to be used in the HAL driver
- */
-
-/* This is defined in Makefile or project */
 
 #ifdef __cplusplus
 }

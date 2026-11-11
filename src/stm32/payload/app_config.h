@@ -18,21 +18,9 @@
 #ifndef APP_CONFIG
 #define APP_CONFIG
 
-/* ifndef so you can change below without code modification */
-#ifndef IMG_STREAMS
-#ifdef STM32N6570_DK_REV
-#define IMG_STREAMS {{UVCL_PAYLOAD_UNCOMPRESSED_YUY2, 800, 480, 30}};
-
-#define MAX_IMG_FRAME_SIZE (800 * 480 * 2)
-#else
-#define IMG_STREAMS {{UVCL_PAYLOAD_UNCOMPRESSED_YUY2, 800, 480, 30}};
-
-#define MAX_IMG_FRAME_SIZE (800 * 480 * 2)
-#endif
-#else
-#ifndef MAX_IMG_FRAME_SIZE
-#error MAX_IMG_FRAME_SIZE must be define
-#endif
-#endif
+#define CAPTURE_WIDTH 800
+#define CAPTURE_HEIGHT 480
+#define CAPTURE_FPS 30
+#define MAX_IMG_FRAME_SIZE (CAPTURE_WIDTH * CAPTURE_HEIGHT * 2)
 
 #endif

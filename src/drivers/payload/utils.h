@@ -20,9 +20,7 @@
 #define UTILS
 
 #define ALIGN_32 __attribute__((aligned(32)))
-#define IN_PSRAM __attribute__((section(".psram_bss")))
-#define UNCACHED __attribute__((section(".uncached_bss")))
-#define WEAK __weak
+#define IN_CAPTURE_RAM __attribute__((section(".capture_bss")))
 
 #ifndef MIN
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -31,7 +29,5 @@
 #ifndef MAX
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #endif
-
-#define ARRAY_NB(a) (sizeof(a) / sizeof(a[0]))
 
 #endif

@@ -16,7 +16,6 @@
  ******************************************************************************
  */
 
-
 /* Includes ------------------------------------------------------------------*/
 #include "cmw_camera.h"
 
@@ -24,30 +23,7 @@
 #include "stm32n6xx_hal_dcmipp.h"
 #include "cmw_utils.h"
 #include "cmw_io.h"
-#if defined(USE_VD55G1_SENSOR)
-#include "cmw_vd55g1.h"
-#endif
-#if defined(USE_VD65G4_SENSOR)
-#include "cmw_vd65g4.h"
-#endif
-#if defined(USE_IMX335_SENSOR)
 #include "cmw_imx335.h"
-#endif
-#if defined(USE_OV5640_SENSOR)
-#include "cmw_ov5640.h"
-#endif
-#if defined(USE_VD66GY_SENSOR)
-#include "cmw_vd66gy.h"
-#endif
-#if defined(USE_VD56G3_SENSOR)
-#include "cmw_vd56g3.h"
-#endif
-#if defined(USE_VD1943_SENSOR)
-#include "cmw_vd1943.h"
-#endif
-#if defined (USE_VD5943_SENSOR)
-#include "cmw_vd5943.h"
-#endif
 #include "assert.h"
 
 typedef struct
@@ -77,62 +53,13 @@ CAMERA_Ctx_t  Camera_Ctx;
 DCMIPP_HandleTypeDef hcamera_dcmipp;
 static CMW_Sensor_if_t Camera_Drv;
 
-static union
-{
-#if defined(USE_IMX335_SENSOR)
-  CMW_IMX335_t imx335_bsp;
-#endif
-#if defined(USE_VD55G1_SENSOR)
-  CMW_VD55G1_t vd55g1_bsp;
-#endif
-#if defined(USE_VD65G4_SENSOR)
-  CMW_VD65G4_t vd65g4_bsp;
-#endif
-#if defined(USE_VD66GY_SENSOR)
-  CMW_VD66GY_t vd66gy_bsp;
-#endif
-#if defined(USE_VD56G3_SENSOR)
-  CMW_VD56G3_t vd56g3_bsp;
-#endif
-#if defined(USE_OV5640_SENSOR)
-  CMW_OV5640_t ov5640_bsp;
-#endif
-#if defined(USE_VD1943_SENSOR)
-  CMW_VD1943_t vd1943_bsp;
-#endif
-#if defined(USE_VD5943_SENSOR)
-  CMW_VD5943_t vd5943_bsp;
-#endif
-} camera_bsp;
+static CMW_IMX335_t camera_bsp;
 
 int is_camera_init = 0;
 int is_camera_started = 0;
 int is_pipe1_2_shared = 0;
 
-#if defined(USE_IMX335_SENSOR)
 static int32_t CMW_CAMERA_IMX335_Init( CMW_Sensor_Init_t *initSensors_params);
-#endif
-#if defined(USE_VD55G1_SENSOR)
-static int32_t CMW_CAMERA_VD55G1_Init( CMW_Sensor_Init_t *initSensors_params);
-#endif
-#if defined(USE_VD65G4_SENSOR)
-static int32_t CMW_CAMERA_VD65G4_Init( CMW_Sensor_Init_t *initSensors_params);
-#endif
-#if defined(USE_OV5640_SENSOR)
-static int32_t CMW_CAMERA_OV5640_Init( CMW_Sensor_Init_t *initSensors_params);
-#endif
-#if defined(USE_VD66GY_SENSOR)
-static int32_t CMW_CAMERA_VD66GY_Init(CMW_Sensor_Init_t *initValues);
-#endif
-#if defined(USE_VD56G3_SENSOR)
-static int32_t CMW_CAMERA_VD56G3_Init(CMW_Sensor_Init_t *initSensors_params);
-#endif
-#if defined(USE_VD1943_SENSOR)
-static int32_t CMW_CAMERA_VD1943_Init(CMW_Sensor_Init_t *initValues);
-#endif
-#if defined(USE_VD5943_SENSOR)
-static int32_t CMW_CAMERA_VD5943_Init(CMW_Sensor_Init_t *initValues);
-#endif
 static void CMW_CAMERA_EnableGPIOs(void);
 static void CMW_CAMERA_PwrDown(void);
 static int32_t CMW_CAMERA_SetPipe(DCMIPP_HandleTypeDef *hdcmipp, uint32_t pipe, CMW_DCMIPP_Conf_t *p_conf, uint32_t *pitch);
@@ -247,77 +174,17 @@ int32_t CMW_CAMERA_ListWBRefModes(uint32_t RefColorTemp[])
 static int CMW_CAMERA_Probe_Sensor(CMW_Sensor_Init_t *initValues, CMW_Sensor_Name_t *sensorName)
 {
   int ret;
-#if defined(USE_OV5640_SENSOR)
-  ret = CMW_CAMERA_OV5640_Init(initValues);
-  if (ret == CMW_ERROR_NONE)
-  {
-    *sensorName = CMW_OV5640_Sensor;
-    return ret;
-  }
-#endif
-#if defined(USE_VD55G1_SENSOR)
-  ret = CMW_CAMERA_VD55G1_Init(initValues);
-  if (ret == CMW_ERROR_NONE)
-  {
-    *sensorName = CMW_VD55G1_Sensor;
-    return ret;
-  }
-#endif
-#if defined(USE_VD65G4_SENSOR)
-  ret = CMW_CAMERA_VD65G4_Init(initValues);
-  if (ret == CMW_ERROR_NONE)
-  {
-    *sensorName = CMW_VD65G4_Sensor;
-    return ret;
-  }
-#endif
-#if defined(USE_VD66GY_SENSOR)
-  ret = CMW_CAMERA_VD66GY_Init(initValues);
-  if (ret == CMW_ERROR_NONE)
-  {
-    *sensorName = CMW_VD66GY_Sensor;
-    return ret;
-  }
-#endif
-#if defined(USE_VD56G3_SENSOR)
-  ret = CMW_CAMERA_VD56G3_Init(initValues);
-  if (ret == CMW_ERROR_NONE)
-  {
-    *sensorName = CMW_VD56G3_Sensor;
-    return ret;
-  }
-#endif
-#if defined(USE_VD1943_SENSOR)
-  ret = CMW_CAMERA_VD1943_Init(initValues);
-  if (ret == CMW_ERROR_NONE)
-  {
-    *sensorName = CMW_VD1943_Sensor;
-    return ret;
-  }
-#endif
-#if defined(USE_VD5943_SENSOR)
-  ret = CMW_CAMERA_VD5943_Init(initValues);
-  if (ret == CMW_ERROR_NONE)
-  {
-    *sensorName = CMW_VD5943_Sensor;
-    return ret;
-  }
-#endif
-#if defined(USE_IMX335_SENSOR)
   ret = CMW_CAMERA_IMX335_Init(initValues);
   if (ret == CMW_ERROR_NONE)
   {
     *sensorName = CMW_IMX335_Sensor;
     return ret;
   }
-#endif
   else
   {
     return CMW_ERROR_UNKNOWN_COMPONENT;
   }
 }
-
-
 
 /**
   * @brief  Initializes the camera.
@@ -473,7 +340,6 @@ int32_t CMW_CAMERA_Start(uint32_t pipe, uint8_t *pbuff, uint32_t mode)
   return ret;
 }
 
-#if defined (STM32N657xx)
 /**
   * @brief  Starts the camera capture in the selected mode.
   * @param  pipe  DCMIPP Pipe
@@ -510,10 +376,6 @@ int32_t CMW_CAMERA_DoubleBufferStart(uint32_t pipe, uint8_t *pbuff1, uint8_t *pb
   /* Return CMW status */
   return ret;
 }
-#endif
-
-
-
 
 /**
   * @brief  DCMIPP Clock Config for DCMIPP.
@@ -832,8 +694,6 @@ int32_t CMW_CAMERA_GetSensorInfo(ISP_SensorInfoTypeDef *info)
   return CMW_ERROR_NONE;
 }
 
-
-
 int32_t CMW_CAMERA_Run()
 {
   if(Camera_Drv.Run != NULL)
@@ -1036,7 +896,6 @@ static void CMW_CAMERA_EnablePin(int value)
   HAL_GPIO_WritePin(EN_CAM_PORT, EN_CAM_PIN, value ? GPIO_PIN_SET : GPIO_PIN_RESET);
 }
 
-#if defined(USE_VD66GY_SENSOR) || defined(USE_IMX335_SENSOR) || defined(USE_VD5943_SENSOR) || defined(USE_VD1943_SENSOR)
 static ISP_StatusTypeDef CB_ISP_SetSensorGain(uint32_t camera_instance, int32_t gain)
 {
   if (CMW_CAMERA_SetGain(gain) != CMW_ERROR_NONE)
@@ -1078,762 +937,7 @@ static ISP_StatusTypeDef CB_ISP_GetSensorInfo(uint32_t camera_instance, ISP_Sens
   }
   return ISP_OK;
 }
-#endif
 
-#if defined(USE_VD55G1_SENSOR)
-static int32_t CMW_CAMERA_VD55G1_Init( CMW_Sensor_Init_t *initSensors_params)
-{
-  int32_t ret = CMW_ERROR_NONE;
-  DCMIPP_CSI_ConfTypeDef csi_conf = { 0 };
-  DCMIPP_CSI_PIPE_ConfTypeDef csi_pipe_conf = { 0 };
-  uint32_t dt_format = 0;
-  uint32_t dt = 0;
-  CMW_VD55G1_config_t default_sensor_config;
-  CMW_VD55G1_config_t *sensor_config;
-
-  memset(&camera_bsp, 0, sizeof(camera_bsp));
-  camera_bsp.vd55g1_bsp.Address     = CAMERA_VD55G1_ADDRESS;
-  camera_bsp.vd55g1_bsp.Init        = CMW_I2C_INIT;
-  camera_bsp.vd55g1_bsp.DeInit      = CMW_I2C_DEINIT;
-  camera_bsp.vd55g1_bsp.WriteReg    = CMW_I2C_WRITEREG16;
-  camera_bsp.vd55g1_bsp.ReadReg     = CMW_I2C_READREG16;
-  camera_bsp.vd55g1_bsp.Delay       = HAL_Delay;
-  camera_bsp.vd55g1_bsp.ShutdownPin = CMW_CAMERA_ShutdownPin;
-  camera_bsp.vd55g1_bsp.EnablePin   = CMW_CAMERA_EnablePin;
-
-  ret = CMW_VD55G1_Probe(&camera_bsp.vd55g1_bsp, &Camera_Drv);
-  if (ret != CMW_ERROR_NONE)
-  {
-    return CMW_ERROR_COMPONENT_FAILURE;
-  }
-
-  if ((connected_sensor != CMW_VD55G1_Sensor) && (connected_sensor != CMW_UNKNOWN_Sensor))
-  {
-    /* If the selected sensor in the application side has selected a different sensors than VD55G1 */
-    return CMW_ERROR_COMPONENT_FAILURE;
-  }
-
-  /* Special case: when resolution is not specified take the full sensor resolution */
-  if ((initSensors_params->width == 0) || (initSensors_params->height == 0))
-  {
-    initSensors_params->width = VD55G1_MAX_WIDTH;
-    initSensors_params->height = VD55G1_MAX_HEIGHT;
-  }
-
-  CMW_VD55G1_SetDefaultSensorValues(&default_sensor_config);
-  initSensors_params->sensor_config = initSensors_params->sensor_config ? initSensors_params->sensor_config : &default_sensor_config;
-  sensor_config = (CMW_VD55G1_config_t*) (initSensors_params->sensor_config);
-
-  ret = Camera_Drv.Init(&camera_bsp, initSensors_params);
-  if (ret != CMW_ERROR_NONE)
-  {
-    return CMW_ERROR_COMPONENT_FAILURE;
-  }
-
-  csi_conf.NumberOfLanes = DCMIPP_CSI_ONE_DATA_LANE;
-  csi_conf.DataLaneMapping = DCMIPP_CSI_PHYSICAL_DATA_LANES;
-  csi_conf.PHYBitrate = DCMIPP_CSI_PHY_BT_800;
-  ret = HAL_DCMIPP_CSI_SetConfig(&hcamera_dcmipp, &csi_conf);
-  if (ret != HAL_OK)
-  {
-    return CMW_ERROR_PERIPH_FAILURE;
-  }
-
-  switch (sensor_config->pixel_format)
-  {
-    case CMW_PIXEL_FORMAT_RAW8:
-    {
-      dt_format = DCMIPP_CSI_DT_BPP8;
-      dt = DCMIPP_DT_RAW8;
-      break;
-    }
-    case CMW_PIXEL_FORMAT_RAW10:
-    case CMW_PIXEL_FORMAT_DEFAULT:
-    {
-      dt_format = DCMIPP_CSI_DT_BPP10;
-      dt = DCMIPP_DT_RAW10;
-      break;
-    }
-    default:
-      return CMW_ERROR_COMPONENT_FAILURE;
-  }
-
-  ret = HAL_DCMIPP_CSI_SetVCConfig(&hcamera_dcmipp, DCMIPP_VIRTUAL_CHANNEL0, dt_format);
-  if (ret != HAL_OK)
-  {
-    return CMW_ERROR_PERIPH_FAILURE;
-  }
-
-  csi_pipe_conf.DataTypeMode = DCMIPP_DTMODE_DTIDA;
-  csi_pipe_conf.DataTypeIDA = dt;
-  csi_pipe_conf.DataTypeIDB = 0;
-  /* Pre-initialize CSI config for all the pipes */
-  for (uint32_t i = DCMIPP_PIPE0; i <= DCMIPP_PIPE2; i++)
-  {
-    ret = HAL_DCMIPP_CSI_PIPE_SetConfig(&hcamera_dcmipp, i, &csi_pipe_conf);
-    if (ret != HAL_OK)
-    {
-      return CMW_ERROR_PERIPH_FAILURE;
-    }
-  }
-
-  return CMW_ERROR_NONE;
-}
-#endif
-
-#if defined(USE_VD65G4_SENSOR)
-static int32_t CMW_CAMERA_VD65G4_Init( CMW_Sensor_Init_t *initSensors_params)
-{
-  int32_t ret = CMW_ERROR_NONE;
-  DCMIPP_CSI_ConfTypeDef csi_conf = { 0 };
-  DCMIPP_CSI_PIPE_ConfTypeDef csi_pipe_conf = { 0 };
-  uint32_t dt_format = 0;
-  uint32_t dt = 0;
-  CMW_VD65G4_config_t default_sensor_config;
-  CMW_VD65G4_config_t *sensor_config;
-
-  memset(&camera_bsp, 0, sizeof(camera_bsp));
-  camera_bsp.vd65g4_bsp.Address     = CAMERA_VD65G4_ADDRESS;
-  camera_bsp.vd65g4_bsp.Init        = CMW_I2C_INIT;
-  camera_bsp.vd65g4_bsp.DeInit      = CMW_I2C_DEINIT;
-  camera_bsp.vd65g4_bsp.WriteReg    = CMW_I2C_WRITEREG16;
-  camera_bsp.vd65g4_bsp.ReadReg     = CMW_I2C_READREG16;
-  camera_bsp.vd65g4_bsp.Delay       = HAL_Delay;
-  camera_bsp.vd65g4_bsp.ShutdownPin = CMW_CAMERA_ShutdownPin;
-  camera_bsp.vd65g4_bsp.EnablePin   = CMW_CAMERA_EnablePin;
-
-  ret = CMW_VD65G4_Probe(&camera_bsp.vd65g4_bsp, &Camera_Drv);
-  if (ret != CMW_ERROR_NONE)
-  {
-    return CMW_ERROR_COMPONENT_FAILURE;
-  }
-
-  if ((connected_sensor != CMW_VD65G4_Sensor) && (connected_sensor != CMW_UNKNOWN_Sensor))
-  {
-    /* If the selected sensor in the application side has selected a different sensors than VD65G4 */
-    return CMW_ERROR_COMPONENT_FAILURE;
-  }
-
-  /* Special case: when resolution is not specified take the full sensor resolution */
-  if ((initSensors_params->width == 0U) || (initSensors_params->height == 0U))
-  {
-    initSensors_params->width = VD55G1_MAX_WIDTH;
-    initSensors_params->height = VD55G1_MAX_HEIGHT;
-  }
-
-  CMW_VD65G4_SetDefaultSensorValues(&default_sensor_config);
-  initSensors_params->sensor_config = initSensors_params->sensor_config ? initSensors_params->sensor_config : &default_sensor_config;
-  sensor_config = (CMW_VD65G4_config_t*)(initSensors_params->sensor_config);
-
-  ret = Camera_Drv.Init(&camera_bsp, initSensors_params);
-  if (ret != CMW_ERROR_NONE)
-  {
-    return CMW_ERROR_COMPONENT_FAILURE;
-  }
-
-  csi_conf.NumberOfLanes = DCMIPP_CSI_ONE_DATA_LANE;
-  csi_conf.DataLaneMapping = DCMIPP_CSI_PHYSICAL_DATA_LANES;
-  csi_conf.PHYBitrate = DCMIPP_CSI_PHY_BT_800;
-  ret = HAL_DCMIPP_CSI_SetConfig(&hcamera_dcmipp, &csi_conf);
-  if (ret != HAL_OK)
-  {
-    return CMW_ERROR_PERIPH_FAILURE;
-  }
-
-  switch (sensor_config->pixel_format)
-  {
-    case CMW_PIXEL_FORMAT_RAW8:
-    {
-      dt_format = DCMIPP_CSI_DT_BPP8;
-      dt = DCMIPP_DT_RAW8;
-      break;
-    }
-    case CMW_PIXEL_FORMAT_RAW10:
-    case CMW_PIXEL_FORMAT_DEFAULT:
-    {
-      dt_format = DCMIPP_CSI_DT_BPP10;
-      dt = DCMIPP_DT_RAW10;
-      break;
-    }
-    default:
-      return CMW_ERROR_COMPONENT_FAILURE;
-  }
-
-  ret = HAL_DCMIPP_CSI_SetVCConfig(&hcamera_dcmipp, DCMIPP_VIRTUAL_CHANNEL0, dt_format);
-  if (ret != HAL_OK)
-  {
-    return CMW_ERROR_PERIPH_FAILURE;
-  }
-
-  csi_pipe_conf.DataTypeMode = DCMIPP_DTMODE_DTIDA;
-  csi_pipe_conf.DataTypeIDA = dt;
-  csi_pipe_conf.DataTypeIDB = 0U;
-  /* Pre-initialize CSI config for all the pipes */
-  for (uint32_t i = DCMIPP_PIPE0; i <= DCMIPP_PIPE2; i++)
-  {
-    ret = HAL_DCMIPP_CSI_PIPE_SetConfig(&hcamera_dcmipp, i, &csi_pipe_conf);
-    if (ret != HAL_OK)
-    {
-      return CMW_ERROR_PERIPH_FAILURE;
-    }
-  }
-
-  return CMW_ERROR_NONE;
-}
-#endif
-
-#if defined(USE_OV5640_SENSOR)
-static int32_t CMW_CAMERA_OV5640_Init( CMW_Sensor_Init_t *initSensors_params)
-{
-  int32_t ret = CMW_ERROR_NONE;
-  DCMIPP_CSI_ConfTypeDef csi_conf = { 0 };
-  DCMIPP_CSI_PIPE_ConfTypeDef csi_pipe_conf = { 0 };
-  uint32_t dt_format = 0;
-  uint32_t dt = 0;
- CMW_OV5640_config_t default_sensor_config;
- CMW_OV5640_config_t *sensor_config;
-
-  memset(&camera_bsp, 0, sizeof(camera_bsp));
-  camera_bsp.ov5640_bsp.Address     = CAMERA_OV5640_ADDRESS;
-  camera_bsp.ov5640_bsp.Init        = CMW_I2C_INIT;
-  camera_bsp.ov5640_bsp.DeInit      = CMW_I2C_DEINIT;
-  camera_bsp.ov5640_bsp.WriteReg    = CMW_I2C_WRITEREG16;
-  camera_bsp.ov5640_bsp.ReadReg     = CMW_I2C_READREG16;
-  camera_bsp.ov5640_bsp.GetTick     = BSP_GetTick;
-  camera_bsp.ov5640_bsp.Delay       = HAL_Delay;
-  camera_bsp.ov5640_bsp.ShutdownPin = CMW_CAMERA_ShutdownPin;
-  camera_bsp.ov5640_bsp.EnablePin   = CMW_CAMERA_EnablePin;
-
-  ret = CMW_OV5640_Probe(&camera_bsp.ov5640_bsp, &Camera_Drv);
-  if (ret != CMW_ERROR_NONE)
-  {
-    return CMW_ERROR_COMPONENT_FAILURE;
-  }
-
-  if ((connected_sensor != CMW_OV5640_Sensor) && (connected_sensor != CMW_UNKNOWN_Sensor))
-  {
-    /* If the selected sensor in the application side has selected a different sensors than OV5640 */
-    return CMW_ERROR_COMPONENT_FAILURE;
-  }
-
-  /* Special case: when resolution is not specified take the full sensor resolution */
-  if ((initSensors_params->width == 0) || (initSensors_params->height == 0))
-  {
-    ISP_SensorInfoTypeDef sensor_info;
-    Camera_Drv.GetSensorInfo(&camera_bsp, &sensor_info);
-    initSensors_params->width = sensor_info.width;
-    initSensors_params->height = sensor_info.height;
-  }
-
-  CMW_OV5640_SetDefaultSensorValues(&default_sensor_config);
-  initSensors_params->sensor_config = initSensors_params->sensor_config ? initSensors_params->sensor_config : &default_sensor_config;
-  sensor_config = (CMW_OV5640_config_t*) (initSensors_params->sensor_config);
-
-  ret = Camera_Drv.Init(&camera_bsp, initSensors_params);
-  if (ret != CMW_ERROR_NONE)
-  {
-    return CMW_ERROR_COMPONENT_FAILURE;
-  }
-
-  csi_conf.NumberOfLanes = DCMIPP_CSI_TWO_DATA_LANES;
-  csi_conf.DataLaneMapping = DCMIPP_CSI_PHYSICAL_DATA_LANES;
-  csi_conf.PHYBitrate = DCMIPP_CSI_PHY_BT_250;
-  ret = HAL_DCMIPP_CSI_SetConfig(&hcamera_dcmipp, &csi_conf);
-  if (ret != HAL_OK)
-  {
-    return CMW_ERROR_PERIPH_FAILURE;
-  }
-
-  switch (sensor_config->pixel_format)
-  {
-
-    case CMW_PIXEL_FORMAT_YUV422_8:
-    {
-      dt_format = DCMIPP_CSI_DT_BPP8;
-      dt = DCMIPP_DT_YUV422_8;
-      break;
-    }
-    case CMW_PIXEL_FORMAT_DEFAULT:
-    case CMW_PIXEL_FORMAT_RGB565:
-    {
-      dt_format = DCMIPP_CSI_DT_BPP8;
-      dt = DCMIPP_DT_RGB565;
-      break;
-    }
-    case CMW_PIXEL_FORMAT_RGB888:
-    {
-      dt_format = DCMIPP_CSI_DT_BPP8;
-      dt = DCMIPP_DT_RGB888;
-      break;
-    }
-    case CMW_PIXEL_FORMAT_RAW8:
-    {
-      dt_format = DCMIPP_CSI_DT_BPP8;
-      dt = DCMIPP_DT_RAW8;
-      break;
-    }
-    default:
-      return CMW_ERROR_COMPONENT_FAILURE;
-      break;
-  }
-
-  ret = HAL_DCMIPP_CSI_SetVCConfig(&hcamera_dcmipp, DCMIPP_VIRTUAL_CHANNEL0, dt_format);
-  if (ret != HAL_OK)
-  {
-    return CMW_ERROR_PERIPH_FAILURE;
-  }
-
-  csi_pipe_conf.DataTypeMode = DCMIPP_DTMODE_DTIDA;
-  csi_pipe_conf.DataTypeIDA = dt;
-  csi_pipe_conf.DataTypeIDB = 0;
-  /* Pre-initialize CSI config for all the pipes */
-  for (uint32_t i = DCMIPP_PIPE0; i <= DCMIPP_PIPE2; i++)
-  {
-    ret = HAL_DCMIPP_CSI_PIPE_SetConfig(&hcamera_dcmipp, i, &csi_pipe_conf);
-    if (ret != HAL_OK)
-    {
-      return CMW_ERROR_PERIPH_FAILURE;
-    }
-  }
-
-  return CMW_ERROR_NONE;
-}
-#endif
-
-#if defined(USE_VD66GY_SENSOR)
-static int32_t CMW_CAMERA_VD66GY_Init( CMW_Sensor_Init_t *initSensors_params)
-{
-  int32_t ret = CMW_ERROR_NONE;
-  DCMIPP_CSI_ConfTypeDef csi_conf = { 0 };
-  DCMIPP_CSI_PIPE_ConfTypeDef csi_pipe_conf = { 0 };
-  uint32_t dt_format = 0;
-  uint32_t dt = 0;
-  CMW_VD66GY_config_t default_sensor_config;
-  CMW_VD66GY_config_t *sensor_config;
-
-  memset(&camera_bsp, 0, sizeof(camera_bsp));
-  camera_bsp.vd66gy_bsp.Address     = CAMERA_VD66GY_ADDRESS;
-  camera_bsp.vd66gy_bsp.Init        = CMW_I2C_INIT;
-  camera_bsp.vd66gy_bsp.DeInit      = CMW_I2C_DEINIT;
-  camera_bsp.vd66gy_bsp.ReadReg     = CMW_I2C_READREG16;
-  camera_bsp.vd66gy_bsp.WriteReg    = CMW_I2C_WRITEREG16;
-  camera_bsp.vd66gy_bsp.Delay       = HAL_Delay;
-  camera_bsp.vd66gy_bsp.ShutdownPin = CMW_CAMERA_ShutdownPin;
-  camera_bsp.vd66gy_bsp.EnablePin   = CMW_CAMERA_EnablePin;
-  camera_bsp.vd66gy_bsp.hdcmipp     = &hcamera_dcmipp;
-  camera_bsp.vd66gy_bsp.appliHelpers.SetSensorGain = CB_ISP_SetSensorGain;
-  camera_bsp.vd66gy_bsp.appliHelpers.GetSensorGain = CB_ISP_GetSensorGain;
-  camera_bsp.vd66gy_bsp.appliHelpers.SetSensorExposure = CB_ISP_SetSensorExposure;
-  camera_bsp.vd66gy_bsp.appliHelpers.GetSensorExposure = CB_ISP_GetSensorExposure;
-  camera_bsp.vd66gy_bsp.appliHelpers.GetSensorInfo = CB_ISP_GetSensorInfo;
-
-  ret = CMW_VD66GY_Probe(&camera_bsp.vd66gy_bsp, &Camera_Drv);
-  if (ret != CMW_ERROR_NONE)
-  {
-    return CMW_ERROR_COMPONENT_FAILURE;
-  }
-
-  if ((connected_sensor != CMW_VD66GY_Sensor) && (connected_sensor != CMW_UNKNOWN_Sensor))
-  {
-    /* If the selected sensor in the application side has selected a different sensors than VD66GY */
-    return CMW_ERROR_COMPONENT_FAILURE;
-  }
-
-  /* Special case: when resolution is not specified take the full sensor resolution */
-  if ((initSensors_params->width == 0) || (initSensors_params->height == 0))
-  {
-    ISP_SensorInfoTypeDef sensor_info;
-    Camera_Drv.GetSensorInfo(&camera_bsp, &sensor_info);
-    initSensors_params->width = sensor_info.width;
-    initSensors_params->height = sensor_info.height;
-  }
-
-  CMW_VD66GY_SetDefaultSensorValues(&default_sensor_config);
-  initSensors_params->sensor_config = initSensors_params->sensor_config ? initSensors_params->sensor_config : &default_sensor_config;
-  sensor_config = (CMW_VD66GY_config_t*) (initSensors_params->sensor_config);
-
-  ret = Camera_Drv.Init(&camera_bsp, initSensors_params);
-  if (ret != CMW_ERROR_NONE)
-  {
-    return CMW_ERROR_COMPONENT_FAILURE;
-  }
-
-  csi_conf.NumberOfLanes = DCMIPP_CSI_TWO_DATA_LANES;
-  csi_conf.DataLaneMapping = DCMIPP_CSI_PHYSICAL_DATA_LANES;
-  csi_conf.PHYBitrate = DCMIPP_CSI_PHY_BT_800;
-  ret = HAL_DCMIPP_CSI_SetConfig(&hcamera_dcmipp, &csi_conf);
-  if (ret != HAL_OK)
-  {
-    return CMW_ERROR_PERIPH_FAILURE;
-  }
-
-  switch (sensor_config->pixel_format)
-  {
-    case CMW_PIXEL_FORMAT_RAW8:
-    case CMW_PIXEL_FORMAT_DEFAULT:
-    {
-      dt_format = DCMIPP_CSI_DT_BPP8;
-      dt = DCMIPP_DT_RAW8;
-      break;
-    }
-    default:
-      return CMW_ERROR_COMPONENT_FAILURE;
-  }
-
-  ret = HAL_DCMIPP_CSI_SetVCConfig(&hcamera_dcmipp, DCMIPP_VIRTUAL_CHANNEL0, dt_format);
-  if (ret != HAL_OK)
-  {
-    return CMW_ERROR_PERIPH_FAILURE;
-  }
-
-  csi_pipe_conf.DataTypeMode = DCMIPP_DTMODE_DTIDA;
-  csi_pipe_conf.DataTypeIDA = dt;
-  csi_pipe_conf.DataTypeIDB = 0;
-  /* Pre-initialize CSI config for all the pipes */
-  for (uint32_t i = DCMIPP_PIPE0; i <= DCMIPP_PIPE2; i++)
-  {
-    ret = HAL_DCMIPP_CSI_PIPE_SetConfig(&hcamera_dcmipp, i, &csi_pipe_conf);
-    if (ret != HAL_OK)
-    {
-      return CMW_ERROR_PERIPH_FAILURE;
-    }
-  }
-
-  return CMW_ERROR_NONE;
-}
-#endif
-
-#if defined(USE_VD56G3_SENSOR)
-static int32_t CMW_CAMERA_VD56G3_Init( CMW_Sensor_Init_t *initSensors_params)
-{
-  int32_t ret = CMW_ERROR_NONE;
-  DCMIPP_CSI_ConfTypeDef csi_conf = { 0 };
-  DCMIPP_CSI_PIPE_ConfTypeDef csi_pipe_conf = { 0 };
-  uint32_t dt_format = 0;
-  uint32_t dt = 0;
-  CMW_VD56G3_config_t default_sensor_config;
-  CMW_VD56G3_config_t *sensor_config;
-
-  memset(&camera_bsp, 0, sizeof(camera_bsp));
-  camera_bsp.vd56g3_bsp.Address     = CAMERA_VD56G3_ADDRESS;
-  camera_bsp.vd56g3_bsp.Init        = CMW_I2C_INIT;
-  camera_bsp.vd56g3_bsp.DeInit      = CMW_I2C_DEINIT;
-  camera_bsp.vd56g3_bsp.WriteReg    = CMW_I2C_WRITEREG16;
-  camera_bsp.vd56g3_bsp.ReadReg     = CMW_I2C_READREG16;
-  camera_bsp.vd56g3_bsp.Delay       = HAL_Delay;
-  camera_bsp.vd56g3_bsp.ShutdownPin = CMW_CAMERA_ShutdownPin;
-  camera_bsp.vd56g3_bsp.EnablePin   = CMW_CAMERA_EnablePin;
-
-  ret = CMW_VD56G3_Probe(&camera_bsp.vd56g3_bsp, &Camera_Drv);
-  if (ret != CMW_ERROR_NONE)
-  {
-    return CMW_ERROR_COMPONENT_FAILURE;
-  }
-
-  if ((connected_sensor != CMW_VD56G3_Sensor) && (connected_sensor != CMW_UNKNOWN_Sensor))
-  {
-    return CMW_ERROR_COMPONENT_FAILURE;
-  }
-
-  if ((initSensors_params->width == 0) || (initSensors_params->height == 0))
-  {
-    ISP_SensorInfoTypeDef sensor_info;
-    Camera_Drv.GetSensorInfo(&camera_bsp, &sensor_info);
-    initSensors_params->width = sensor_info.width;
-    initSensors_params->height = sensor_info.height;
-  }
-
-  CMW_VD56G3_SetDefaultSensorValues(&default_sensor_config);
-  initSensors_params->sensor_config = initSensors_params->sensor_config ? initSensors_params->sensor_config : &default_sensor_config;
-  sensor_config = (CMW_VD56G3_config_t*) (initSensors_params->sensor_config);
-
-  ret = Camera_Drv.Init(&camera_bsp, initSensors_params);
-  if (ret != CMW_ERROR_NONE)
-  {
-    return CMW_ERROR_COMPONENT_FAILURE;
-  }
-
-  csi_conf.NumberOfLanes = DCMIPP_CSI_TWO_DATA_LANES;
-  csi_conf.DataLaneMapping = DCMIPP_CSI_PHYSICAL_DATA_LANES;
-  csi_conf.PHYBitrate = DCMIPP_CSI_PHY_BT_800;
-  ret = HAL_DCMIPP_CSI_SetConfig(&hcamera_dcmipp, &csi_conf);
-  if (ret != HAL_OK)
-  {
-    return CMW_ERROR_PERIPH_FAILURE;
-  }
-
-  switch (sensor_config->pixel_format)
-  {
-    case CMW_PIXEL_FORMAT_RAW8:
-    case CMW_PIXEL_FORMAT_DEFAULT:
-    {
-      dt_format = DCMIPP_CSI_DT_BPP8;
-      dt = DCMIPP_DT_RAW8;
-      break;
-    }
-    default:
-      return CMW_ERROR_COMPONENT_FAILURE;
-  }
-
-  ret = HAL_DCMIPP_CSI_SetVCConfig(&hcamera_dcmipp, DCMIPP_VIRTUAL_CHANNEL0, dt_format);
-  if (ret != HAL_OK)
-  {
-    return CMW_ERROR_PERIPH_FAILURE;
-  }
-
-  csi_pipe_conf.DataTypeMode = DCMIPP_DTMODE_DTIDA;
-  csi_pipe_conf.DataTypeIDA = dt;
-  csi_pipe_conf.DataTypeIDB = 0;
-  for (uint32_t i = DCMIPP_PIPE0; i <= DCMIPP_PIPE2; i++)
-  {
-    ret = HAL_DCMIPP_CSI_PIPE_SetConfig(&hcamera_dcmipp, i, &csi_pipe_conf);
-    if (ret != HAL_OK)
-    {
-      return CMW_ERROR_PERIPH_FAILURE;
-    }
-  }
-
-  return CMW_ERROR_NONE;
-}
-#endif
-
-#if defined(USE_VD1943_SENSOR)
-static int32_t CMW_CAMERA_VD1943_Init( CMW_Sensor_Init_t *initSensors_params)
-{
-  int32_t ret = CMW_ERROR_NONE;
-  DCMIPP_CSI_ConfTypeDef csi_conf = { 0 };
-  DCMIPP_CSI_PIPE_ConfTypeDef csi_pipe_conf = { 0 };
-  uint32_t dt_format = 0;
-  uint32_t dt = 0;
-  CMW_VD1943_config_t default_sensor_config;
-  int32_t csi_phybitrate_i = -1;
-  CMW_VD1943_config_t *sensor_config;
-
-  memset(&camera_bsp, 0, sizeof(camera_bsp));
-  camera_bsp.vd1943_bsp.Address     = CAMERA_VD1943_ADDRESS;
-  camera_bsp.vd1943_bsp.Init        = CMW_I2C_INIT;
-  camera_bsp.vd1943_bsp.DeInit      = CMW_I2C_DEINIT;
-  camera_bsp.vd1943_bsp.WriteReg    = CMW_I2C_WRITEREG16;
-  camera_bsp.vd1943_bsp.ReadReg     = CMW_I2C_READREG16;
-  camera_bsp.vd1943_bsp.Delay       = HAL_Delay;
-  camera_bsp.vd1943_bsp.ShutdownPin = CMW_CAMERA_ShutdownPin;
-  camera_bsp.vd1943_bsp.EnablePin   = CMW_CAMERA_EnablePin;
-  camera_bsp.vd1943_bsp.hdcmipp     = &hcamera_dcmipp;
-  camera_bsp.vd1943_bsp.appliHelpers.SetSensorGain = CB_ISP_SetSensorGain;
-  camera_bsp.vd1943_bsp.appliHelpers.GetSensorGain = CB_ISP_GetSensorGain;
-  camera_bsp.vd1943_bsp.appliHelpers.SetSensorExposure = CB_ISP_SetSensorExposure;
-  camera_bsp.vd1943_bsp.appliHelpers.GetSensorExposure = CB_ISP_GetSensorExposure;
-  camera_bsp.vd1943_bsp.appliHelpers.GetSensorInfo = CB_ISP_GetSensorInfo;
-
-  ret = CMW_VD1943_Probe(&camera_bsp.vd1943_bsp, &Camera_Drv);
-  if (ret != CMW_ERROR_NONE)
-  {
-    return CMW_ERROR_COMPONENT_FAILURE;
-  }
-
-  if ((connected_sensor != CMW_VD1943_Sensor) && (connected_sensor != CMW_UNKNOWN_Sensor))
-  {
-    /* If the selected sensor in the application side has selected a different sensors than VD1943 */
-    return CMW_ERROR_COMPONENT_FAILURE;
-  }
-
-  /* Special case: when resolution is not specified take the full sensor resolution */
-  if ((initSensors_params->width == 0) || (initSensors_params->height == 0))
-  {
-    initSensors_params->width = VD1943_MAX_WIDTH;
-    initSensors_params->height = VD1943_MAX_HEIGHT;
-  }
-
-  CMW_VD1943_SetDefaultSensorValues(&default_sensor_config);
-  initSensors_params->sensor_config = initSensors_params->sensor_config ? initSensors_params->sensor_config : &default_sensor_config;
-  sensor_config = (CMW_VD1943_config_t*) (initSensors_params->sensor_config);
-
-  ret = Camera_Drv.Init(&camera_bsp, initSensors_params);
-  if (ret != CMW_ERROR_NONE)
-  {
-    return CMW_ERROR_COMPONENT_FAILURE;
-  }
-
-  csi_phybitrate_i = CMW_UTILS_getClosest_HAL_PHYBitrate(sensor_config->CSI_PHYBitrate);
-  if (csi_phybitrate_i < 0)
-  {
-    return CMW_ERROR_WRONG_PARAM;
-  }
-
-  csi_conf.NumberOfLanes = DCMIPP_CSI_TWO_DATA_LANES;
-  csi_conf.DataLaneMapping = DCMIPP_CSI_PHYSICAL_DATA_LANES;
-  csi_conf.PHYBitrate = csi_phybitrate_i;
-  ret = HAL_DCMIPP_CSI_SetConfig(&hcamera_dcmipp, &csi_conf);
-  if (ret != HAL_OK)
-  {
-    return CMW_ERROR_PERIPH_FAILURE;
-  }
-
-  switch (sensor_config->pixel_format)
-  {
-    case CMW_PIXEL_FORMAT_RAW8:
-    {
-      dt_format = DCMIPP_CSI_DT_BPP8;
-      dt = DCMIPP_DT_RAW8;
-      break;
-    }
-    case CMW_PIXEL_FORMAT_RAW10:
-    {
-      dt_format = DCMIPP_CSI_DT_BPP10;
-      dt = DCMIPP_DT_RAW10;
-      break;
-    }
-    case CMW_PIXEL_FORMAT_RAW12:
-    case CMW_PIXEL_FORMAT_DEFAULT:
-    {
-      dt_format = DCMIPP_CSI_DT_BPP12;
-      dt = DCMIPP_DT_RAW12;
-      break;
-    }
-    default:
-      return CMW_ERROR_COMPONENT_FAILURE;
-  }
-
-  ret = HAL_DCMIPP_CSI_SetVCConfig(&hcamera_dcmipp, DCMIPP_VIRTUAL_CHANNEL0, dt_format);
-  if (ret != HAL_OK)
-  {
-    return CMW_ERROR_PERIPH_FAILURE;
-  }
-
-  csi_pipe_conf.DataTypeMode = DCMIPP_DTMODE_DTIDA;
-  csi_pipe_conf.DataTypeIDA = dt;
-  csi_pipe_conf.DataTypeIDB = 0;
-  /* Pre-initialize CSI config for all the pipes */
-  for (uint32_t i = DCMIPP_PIPE0; i <= DCMIPP_PIPE2; i++)
-  {
-    ret = HAL_DCMIPP_CSI_PIPE_SetConfig(&hcamera_dcmipp, i, &csi_pipe_conf);
-    if (ret != HAL_OK)
-    {
-      return CMW_ERROR_PERIPH_FAILURE;
-    }
-  }
-
-  return CMW_ERROR_NONE;
-}
-#endif
-
-#if defined(USE_VD5943_SENSOR)
-static int32_t CMW_CAMERA_VD5943_Init( CMW_Sensor_Init_t *initSensors_params)
-{
-  int32_t ret = CMW_ERROR_NONE;
-  DCMIPP_CSI_ConfTypeDef csi_conf = { 0 };
-  DCMIPP_CSI_PIPE_ConfTypeDef csi_pipe_conf = { 0 };
-  uint32_t dt_format = 0;
-  uint32_t dt = 0;
-  CMW_VD5943_config_t default_sensor_config;
-  int32_t csi_phybitrate_i = -1;
-  CMW_VD5943_config_t *sensor_config;
-
-  memset(&camera_bsp, 0, sizeof(camera_bsp));
-  camera_bsp.vd5943_bsp.Address     = CAMERA_VD1943_ADDRESS;
-  camera_bsp.vd5943_bsp.Init        = CMW_I2C_INIT;
-  camera_bsp.vd5943_bsp.DeInit      = CMW_I2C_DEINIT;
-  camera_bsp.vd5943_bsp.WriteReg    = CMW_I2C_WRITEREG16;
-  camera_bsp.vd5943_bsp.ReadReg     = CMW_I2C_READREG16;
-  camera_bsp.vd5943_bsp.Delay       = HAL_Delay;
-  camera_bsp.vd5943_bsp.ShutdownPin = CMW_CAMERA_ShutdownPin;
-  camera_bsp.vd5943_bsp.EnablePin   = CMW_CAMERA_EnablePin;
-  camera_bsp.vd5943_bsp.hdcmipp     = &hcamera_dcmipp;
-  camera_bsp.vd5943_bsp.appliHelpers.SetSensorGain = CB_ISP_SetSensorGain;
-  camera_bsp.vd5943_bsp.appliHelpers.GetSensorGain = CB_ISP_GetSensorGain;
-  camera_bsp.vd5943_bsp.appliHelpers.SetSensorExposure = CB_ISP_SetSensorExposure;
-  camera_bsp.vd5943_bsp.appliHelpers.GetSensorExposure = CB_ISP_GetSensorExposure;
-  camera_bsp.vd5943_bsp.appliHelpers.GetSensorInfo = CB_ISP_GetSensorInfo;
-
-  ret = CMW_VD5943_Probe(&camera_bsp.vd5943_bsp, &Camera_Drv);
-  if (ret != CMW_ERROR_NONE)
-  {
-    return CMW_ERROR_COMPONENT_FAILURE;
-  }
-
-  if ((connected_sensor != CMW_VD5943_Sensor) && (connected_sensor != CMW_UNKNOWN_Sensor))
-  {
-    /* If the selected sensor in the application side has selected a different sensors than VD5943 */
-    return CMW_ERROR_COMPONENT_FAILURE;
-  }
-
-  /* Special case: when resolution is not specified take the full sensor resolution */
-  if ((initSensors_params->width == 0) || (initSensors_params->height == 0))
-  {
-    ISP_SensorInfoTypeDef sensor_info;
-    Camera_Drv.GetSensorInfo(&camera_bsp, &sensor_info);
-    initSensors_params->width = sensor_info.width;
-    initSensors_params->height = sensor_info.height;
-  }
-
-  CMW_VD5943_SetDefaultSensorValues(&default_sensor_config);
-  initSensors_params->sensor_config = initSensors_params->sensor_config ? initSensors_params->sensor_config : &default_sensor_config;
-  sensor_config = (CMW_VD5943_config_t*) (initSensors_params->sensor_config);
-
-  ret = Camera_Drv.Init(&camera_bsp, initSensors_params);
-  if (ret != CMW_ERROR_NONE)
-  {
-    return CMW_ERROR_COMPONENT_FAILURE;
-  }
-
-  csi_phybitrate_i = CMW_UTILS_getClosest_HAL_PHYBitrate(sensor_config->CSI_PHYBitrate);
-  if (csi_phybitrate_i < 0)
-  {
-    return CMW_ERROR_WRONG_PARAM;
-  }
-
-  csi_conf.NumberOfLanes = DCMIPP_CSI_TWO_DATA_LANES;
-  csi_conf.DataLaneMapping = DCMIPP_CSI_PHYSICAL_DATA_LANES;
-  csi_conf.PHYBitrate = CMW_UTILS_getClosest_HAL_PHYBitrate(sensor_config->CSI_PHYBitrate);
-  ret = HAL_DCMIPP_CSI_SetConfig(&hcamera_dcmipp, &csi_conf);
-  if (ret != HAL_OK)
-  {
-    return CMW_ERROR_PERIPH_FAILURE;
-  }
-
-  switch (sensor_config->pixel_format)
-  {
-    case CMW_PIXEL_FORMAT_RAW10:
-    {
-      dt_format = DCMIPP_CSI_DT_BPP10;
-      dt = DCMIPP_DT_RAW10;
-      break;
-    }
-    case CMW_PIXEL_FORMAT_RAW8:
-    case CMW_PIXEL_FORMAT_DEFAULT:
-    {
-      dt_format = DCMIPP_CSI_DT_BPP8;
-      dt = DCMIPP_DT_RAW8;
-      break;
-    }
-    default:
-      return CMW_ERROR_COMPONENT_FAILURE;
-  }
-
-  ret = HAL_DCMIPP_CSI_SetVCConfig(&hcamera_dcmipp, DCMIPP_VIRTUAL_CHANNEL0, dt_format);
-  if (ret != HAL_OK)
-  {
-    return CMW_ERROR_PERIPH_FAILURE;
-  }
-
-  csi_pipe_conf.DataTypeMode = DCMIPP_DTMODE_DTIDA;
-  csi_pipe_conf.DataTypeIDA = dt;
-  csi_pipe_conf.DataTypeIDB = 0;
-  /* Pre-initialize CSI config for all the pipes */
-  for (uint32_t i = DCMIPP_PIPE0; i <= DCMIPP_PIPE2; i++)
-  {
-    ret = HAL_DCMIPP_CSI_PIPE_SetConfig(&hcamera_dcmipp, i, &csi_pipe_conf);
-    if (ret != HAL_OK)
-    {
-      return CMW_ERROR_PERIPH_FAILURE;
-    }
-  }
-
-  return CMW_ERROR_NONE;
-}
-#endif
-
-#if defined(USE_IMX335_SENSOR)
 static int32_t CMW_CAMERA_IMX335_Init(CMW_Sensor_Init_t *initSensors_params)
 {
   int32_t ret = CMW_ERROR_NONE;
@@ -1845,23 +949,23 @@ static int32_t CMW_CAMERA_IMX335_Init(CMW_Sensor_Init_t *initSensors_params)
   CMW_IMX335_config_t *sensor_config;
 
   memset(&camera_bsp, 0, sizeof(camera_bsp));
-  camera_bsp.imx335_bsp.Address     = CAMERA_IMX335_ADDRESS;
-  camera_bsp.imx335_bsp.Init        = CMW_I2C_INIT;
-  camera_bsp.imx335_bsp.DeInit      = CMW_I2C_DEINIT;
-  camera_bsp.imx335_bsp.ReadReg     = CMW_I2C_READREG16;
-  camera_bsp.imx335_bsp.WriteReg    = CMW_I2C_WRITEREG16;
-  camera_bsp.imx335_bsp.GetTick     = BSP_GetTick;
-  camera_bsp.imx335_bsp.Delay       = HAL_Delay;
-  camera_bsp.imx335_bsp.ShutdownPin = CMW_CAMERA_ShutdownPin;
-  camera_bsp.imx335_bsp.EnablePin   = CMW_CAMERA_EnablePin;
-  camera_bsp.imx335_bsp.hdcmipp     = &hcamera_dcmipp;
-  camera_bsp.imx335_bsp.appliHelpers.SetSensorGain = CB_ISP_SetSensorGain;
-  camera_bsp.imx335_bsp.appliHelpers.GetSensorGain = CB_ISP_GetSensorGain;
-  camera_bsp.imx335_bsp.appliHelpers.SetSensorExposure = CB_ISP_SetSensorExposure;
-  camera_bsp.imx335_bsp.appliHelpers.GetSensorExposure = CB_ISP_GetSensorExposure;
-  camera_bsp.imx335_bsp.appliHelpers.GetSensorInfo = CB_ISP_GetSensorInfo;
+  camera_bsp.Address     = CAMERA_IMX335_ADDRESS;
+  camera_bsp.Init        = CMW_I2C_INIT;
+  camera_bsp.DeInit      = CMW_I2C_DEINIT;
+  camera_bsp.ReadReg     = CMW_I2C_READREG16;
+  camera_bsp.WriteReg    = CMW_I2C_WRITEREG16;
+  camera_bsp.GetTick     = BSP_GetTick;
+  camera_bsp.Delay       = HAL_Delay;
+  camera_bsp.ShutdownPin = CMW_CAMERA_ShutdownPin;
+  camera_bsp.EnablePin   = CMW_CAMERA_EnablePin;
+  camera_bsp.hdcmipp     = &hcamera_dcmipp;
+  camera_bsp.appliHelpers.SetSensorGain = CB_ISP_SetSensorGain;
+  camera_bsp.appliHelpers.GetSensorGain = CB_ISP_GetSensorGain;
+  camera_bsp.appliHelpers.SetSensorExposure = CB_ISP_SetSensorExposure;
+  camera_bsp.appliHelpers.GetSensorExposure = CB_ISP_GetSensorExposure;
+  camera_bsp.appliHelpers.GetSensorInfo = CB_ISP_GetSensorInfo;
 
-  ret = CMW_IMX335_Probe(&camera_bsp.imx335_bsp, &Camera_Drv);
+  ret = CMW_IMX335_Probe(&camera_bsp, &Camera_Drv);
   if (ret != CMW_ERROR_NONE)
   {
     return CMW_ERROR_COMPONENT_FAILURE;
@@ -1945,10 +1049,8 @@ static int32_t CMW_CAMERA_IMX335_Init(CMW_Sensor_Init_t *initSensors_params)
     }
   }
 
-
   return ret;
 }
-#endif
 
 static int32_t CMW_CAMERA_SetPipe(DCMIPP_HandleTypeDef *hdcmipp, uint32_t pipe, CMW_DCMIPP_Conf_t *p_conf, uint32_t *pitch)
 {
@@ -2158,41 +1260,9 @@ int32_t CMW_CAMERA_SetDefaultSensorValues( CMW_Advanced_Config_t *advanced_confi
   }
   switch (advanced_config->selected_sensor)
   {
-#if defined(USE_VD66GY_SENSOR)
-  case CMW_VD66GY_Sensor:
-    CMW_VD66GY_SetDefaultSensorValues(&advanced_config->config_sensor.vd66gy_config);
-    break;
-#endif
-#if defined(USE_VD55G1_SENSOR)
-  case CMW_VD55G1_Sensor:
-    CMW_VD55G1_SetDefaultSensorValues(&advanced_config->config_sensor.vd55g1_config);
-    break;
-#endif
-#if defined(USE_VD65G4_SENSOR)
-  case CMW_VD65G4_Sensor:
-    CMW_VD65G4_SetDefaultSensorValues(&advanced_config->config_sensor.vd65g4_config);
-    break;
-#endif
-#if defined(USE_IMX335_SENSOR)
   case CMW_IMX335_Sensor:
     CMW_IMX335_SetDefaultSensorValues(&advanced_config->config_sensor.imx335_config);
     break;
-#endif
-#if defined(USE_OV5640_SENSOR)
-  case CMW_OV5640_Sensor:
-    CMW_OV5640_SetDefaultSensorValues(&advanced_config->config_sensor.ov5640_config);
-    break;
-#endif
-#if defined(USE_VD1943_SENSOR)
-  case CMW_VD1943_Sensor:
-    CMW_VD1943_SetDefaultSensorValues(&advanced_config->config_sensor.vd1943_config);
-    break;
-#endif
-#if defined(USE_VD5943_SENSOR)
-  case CMW_VD5943_Sensor:
-    CMW_VD5943_SetDefaultSensorValues(&advanced_config->config_sensor.vd5943_config);
-    break;
-#endif
   default:
     return CMW_ERROR_WRONG_PARAM;
     break;

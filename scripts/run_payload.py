@@ -11,9 +11,9 @@ import sys
 
 STM32N6_VECTOR_BASE = 0x34180400
 STM32N6_SRAM_END = 0x341F0000
-PAYLOAD_BOARDS = ("NUCLEO-N657X0-Q", "STM32N6570-DK")
-# These banks are initialized by firmware after their clocks, supplies and
-# external memory controller are ready. The debugger must not load data there.
+PAYLOAD_BOARDS = ("NUCLEO-N657X0-Q",)
+# Firmware initializes these banks after enabling their SRAM clocks and supplies.
+# The debugger must not load data there.
 STM32N6_NOLOAD_BANKS = (
     (0x341F0000, 0x34200000),  # uncached AXI SRAM
     (0x34200000, 0x342E0000),  # SRAM3/4 JPEG conversion workspace
@@ -26,8 +26,7 @@ ELF_PROGRAM_HEADER = struct.Struct("<IIIIIIII")
 def startup_vectors(path, board="NUCLEO-N657X0-Q"):
     if board not in PAYLOAD_BOARDS:
         raise ValueError(f"Unsupported payload board: {board}")
-    capture_bank = ((0x34000000, 0x34180000) if board == "NUCLEO-N657X0-Q"
-                    else (0x91000000, 0x92000000))
+    capture_bank = (0x34000000, 0x34180000)
     main_bank = (STM32N6_VECTOR_BASE, STM32N6_SRAM_END)
     noload_banks = (main_bank, capture_bank, *STM32N6_NOLOAD_BANKS)
     image = path.read_bytes()

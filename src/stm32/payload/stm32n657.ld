@@ -165,11 +165,11 @@ SECTIONS
     __uncached_bss_end__ = .;
   } >AXI_SRAM_UNCACHED
 
-  /* handle as if it was external memory */
-  .psram_section (NOLOAD):
+  /* Raw capture buffers in internal AXI SRAM */
+  .capture_section (NOLOAD):
   {
      . = ALIGN(32);
-    *(.psram_bss)
+    *(.capture_bss)
     . = ALIGN(32);
   } >AXISRAM1_2_P1_S
 

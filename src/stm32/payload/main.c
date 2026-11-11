@@ -19,20 +19,9 @@
 #include <assert.h>
 
 #include "app.h"
-#include "app_config.h"
 #include "app_fuseprogramming.h"
 #include "main.h"
-#include "npu_cache.h"
-#ifdef STM32N6570_DK_REV
-#include "stm32n6570_discovery.h"
-#include "stm32n6570_discovery_bus.h"
-#include "stm32n6570_discovery_lcd.h"
-#include "stm32n6570_discovery_xspi.h"
-#else
 #include "stm32n6xx_nucleo.h"
-#include "stm32n6xx_nucleo_bus.h"
-#include "stm32n6xx_nucleo_xspi.h"
-#endif
 #include <stdio.h>
 #include <string.h>
 #include "stm32n6xx_hal_rif.h"
@@ -139,9 +128,6 @@ static void Setup_Mpu(void) {
     Setup_MpuRegion(MPU_REGION_NUMBER0, (uint32_t)&_sdata, 0x34200000UL);
     Setup_MpuRegion(MPU_REGION_NUMBER1, 0x34000000UL, 0x34180000UL);
     Setup_MpuRegion(MPU_REGION_NUMBER2, 0x34200000UL, 0x343C0000UL);
-#ifdef STM32N6570_DK_REV
-    Setup_MpuRegion(MPU_REGION_NUMBER3, 0x91000000UL, 0x92000000UL);
-#endif
     HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
 
     const size_t uncached_size =
@@ -154,31 +140,14 @@ static void Security_Config() {
     RIMC_MasterConfig_t RIMC_master = {0};
     RIMC_master.MasterCID = RIF_CID_1;
     RIMC_master.SecPriv = RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV;
-    HAL_RIF_RIMC_ConfigMasterAttributes(RIF_MASTER_INDEX_NPU, &RIMC_master);
-    HAL_RIF_RIMC_ConfigMasterAttributes(RIF_MASTER_INDEX_DMA2D, &RIMC_master);
     HAL_RIF_RIMC_ConfigMasterAttributes(RIF_MASTER_INDEX_DCMIPP, &RIMC_master);
-    HAL_RIF_RIMC_ConfigMasterAttributes(RIF_MASTER_INDEX_LTDC1, &RIMC_master);
-    HAL_RIF_RIMC_ConfigMasterAttributes(RIF_MASTER_INDEX_LTDC2, &RIMC_master);
-    HAL_RIF_RIMC_ConfigMasterAttributes(RIF_MASTER_INDEX_OTG1, &RIMC_master);
     HAL_RIF_RIMC_ConfigMasterAttributes(RIF_MASTER_INDEX_SDMMC2, &RIMC_master);
 
-    HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_NPU,
-                                          RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
-    HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_DMA2D,
-                                          RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
     HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_CSI,
                                           RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
     HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_DCMIPP,
                                           RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
-    HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_LTDC,
-                                          RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
-    HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_LTDCL1,
-                                          RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
-    HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_LTDCL2,
-                                          RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
     HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_JPEG,
-                                          RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
-    HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_OTG1HS,
                                           RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
     HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_SDMMC2,
                                           RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
@@ -199,7 +168,6 @@ void IAC_IRQHandler(void) {
 static void SystemClock_Config(void) {
     RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
     RCC_OscInitTypeDef RCC_OscInitStruct = {0};
-    RCC_PeriphCLKInitTypeDef RCC_PeriphCLKInitStruct = {0};
 
     BSP_SMPS_Init(SMPS_VOLTAGE_OVERDRIVE);
     HAL_Delay(1); /* Assuming Voltage Ramp Speed of 1mV/us --> 100mV increase takes 100us */
@@ -234,15 +202,6 @@ static void SystemClock_Config(void) {
     RCC_OscInitStruct.PLL3.PLLP1 = 1;
     RCC_OscInitStruct.PLL3.PLLP2 = 1;
 
-    /* PLL4 = 64 x 20 / 32 = 50MHz */
-    RCC_OscInitStruct.PLL4.PLLState = RCC_PLL_ON;
-    RCC_OscInitStruct.PLL4.PLLSource = RCC_PLLSOURCE_HSI;
-    RCC_OscInitStruct.PLL4.PLLM = 32;
-    RCC_OscInitStruct.PLL4.PLLFractional = 0;
-    RCC_OscInitStruct.PLL4.PLLN = 20;
-    RCC_OscInitStruct.PLL4.PLLP1 = 1;
-    RCC_OscInitStruct.PLL4.PLLP2 = 1;
-
     if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
         while (1)
             ;
@@ -262,7 +221,7 @@ static void SystemClock_Config(void) {
     RCC_ClkInitStruct.IC2Selection.ClockSelection = RCC_ICCLKSOURCE_PLL1;
     RCC_ClkInitStruct.IC2Selection.ClockDivider = 2;
 
-    /* NPU Clock (sysc_ck) = ic6_ck = PLL2 output/ic6_divider = 1000 MHz */
+    /* System clock (sysc_ck) = ic6_ck = PLL2 output/ic6_divider = 1000 MHz */
     RCC_ClkInitStruct.IC6Selection.ClockSelection = RCC_ICCLKSOURCE_PLL2;
     RCC_ClkInitStruct.IC6Selection.ClockDivider = 1;
 
@@ -284,20 +243,6 @@ static void SystemClock_Config(void) {
             ;
     }
 
-    RCC_PeriphCLKInitStruct.PeriphClockSelection = 0;
-
-    /* XSPI1 kernel clock (ck_ker_xspi1) = HCLK = 200MHz */
-    RCC_PeriphCLKInitStruct.PeriphClockSelection |= RCC_PERIPHCLK_XSPI1;
-    RCC_PeriphCLKInitStruct.Xspi1ClockSelection = RCC_XSPI1CLKSOURCE_HCLK;
-
-    /* XSPI2 kernel clock (ck_ker_xspi1) = HCLK =  200MHz */
-    RCC_PeriphCLKInitStruct.PeriphClockSelection |= RCC_PERIPHCLK_XSPI2;
-    RCC_PeriphCLKInitStruct.Xspi2ClockSelection = RCC_XSPI2CLKSOURCE_HCLK;
-
-    if (HAL_RCCEx_PeriphCLKConfig(&RCC_PeriphCLKInitStruct) != HAL_OK) {
-        while (1)
-            ;
-    }
 }
 
 static void CONSOLE_Config() {
@@ -366,18 +311,6 @@ static void main_thread_fct(void *arg) {
     CONSOLE_Config();
 
     Fuse_Programming();
-
-    /*** External RAM and NOR Flash *********************************************/
-#ifdef STM32N6570_DK_REV
-    BSP_XSPI_RAM_Init(0);
-    BSP_XSPI_RAM_EnableMemoryMappedMode(0);
-#endif
-
-    BSP_XSPI_NOR_Init_t NOR_Init;
-    NOR_Init.InterfaceMode = BSP_XSPI_NOR_OPI_MODE;
-    NOR_Init.TransferRate = BSP_XSPI_NOR_DTR_TRANSFER;
-    BSP_XSPI_NOR_Init(0, &NOR_Init);
-    BSP_XSPI_NOR_EnableMemoryMappedMode(0);
 
     ret = BSP_LED_Init(LED_GREEN);
     assert(ret == BSP_ERROR_NONE);
@@ -550,46 +483,7 @@ HAL_StatusTypeDef MX_DCMIPP_ClockConfig(DCMIPP_HandleTypeDef *hdcmipp) {
     return HAL_OK;
 }
 
-void HAL_PCD_MspInit(PCD_HandleTypeDef *hpcd) {
-    assert(hpcd->Instance == USB1_OTG_HS);
-
-    __HAL_RCC_PWR_CLK_ENABLE();
-
-    /* Enable the VDD33USB independent USB 33 voltage monitor */
-    HAL_PWREx_EnableVddUSBVMEN();
-
-    /* Wait until VDD33USB is ready */
-    while (__HAL_PWR_GET_FLAG(PWR_FLAG_USB33RDY) == 0U)
-        ;
-
-    /* Enable VDDUSB supply */
-    HAL_PWREx_EnableVddUSB();
-
-    /* Enable USB1 OTG clock */
-    __HAL_RCC_USB1_OTG_HS_CLK_ENABLE();
-
-    /* Set FSEL to 24 Mhz */
-    USB1_HS_PHYC->USBPHYC_CR &= ~(0x7U << 0x4U);
-    USB1_HS_PHYC->USBPHYC_CR |= (0x2U << 0x4U);
-
-    /* Enable USB1 OTG PHY clock */
-    __HAL_RCC_USB1_OTG_HS_PHY_CLK_ENABLE();
-
-    HAL_NVIC_SetPriority(USB1_OTG_HS_IRQn, 6U, 0U);
-
-    /* Enable USB OTG interrupt */
-    HAL_NVIC_EnableIRQ(USB1_OTG_HS_IRQn);
-}
-
 #ifdef USE_FULL_ASSERT
-
-/**
- * @brief  Reports the name of the source file and the source line number
- *         where the assert_param error has occurred.
- * @param  file: pointer to the source file name
- * @param  line: assert_param error line source number
- * @retval None
- */
 void assert_failed(uint8_t *file, uint32_t line) {
     UNUSED(file);
     UNUSED(line);
@@ -598,8 +492,3 @@ void assert_failed(uint8_t *file, uint32_t line) {
     }
 }
 #endif
-
-/* Allow to debug with cache enable */
-__attribute__((section(".keep_me"))) void app_clean_invalidate_dbg() {
-    SCB_CleanInvalidateDCache();
-}

@@ -21,7 +21,6 @@
 #include "stm32n6xx_it.h"
 
 #include "cmw_camera.h"
-#include "uvcl.h"
 
 /**
  * @brief   This function handles NMI exception.
@@ -87,8 +86,4 @@ void CSI_IRQHandler(void) {
 
 void DCMIPP_IRQHandler(void) {
     HAL_DCMIPP_IRQHandler(CMW_CAMERA_GetDCMIPPHandle());
-}
-
-void USB1_OTG_HS_IRQHandler(void) {
-    UVCL_IRQHandler();
 }

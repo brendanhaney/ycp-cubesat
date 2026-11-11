@@ -16,6 +16,7 @@
 ******************************************************************************
 */
 #include <assert.h>
+#include <stdio.h>
 #include "cmw_camera.h"
 #include "app_cam.h"
 #include "app_config.h"
@@ -25,55 +26,16 @@
 /* Define sensor orientation */
 #if CAMERA_SELFY == 1
 #define SENSOR_IMX335_FLIP CMW_MIRRORFLIP_MIRROR
-#define SENSOR_VD66GY_FLIP CMW_MIRRORFLIP_FLIP
-#define SENSOR_VD55G1_FLIP CMW_MIRRORFLIP_FLIP
-#define SENSOR_VD1943_FLIP CMW_MIRRORFLIP_MIRROR
 #else
 #define SENSOR_IMX335_FLIP CMW_MIRRORFLIP_NONE
-#define SENSOR_VD66GY_FLIP CMW_MIRRORFLIP_FLIP_MIRROR
-#define SENSOR_VD55G1_FLIP CMW_MIRRORFLIP_FLIP_MIRROR
-#define SENSOR_VD1943_FLIP CMW_MIRRORFLIP_NONE
 #endif
 
 /* Define sensor width x height size. 0x0 means full frame */
 #define SENSOR_WIDTH 0
 #define SENSOR_HEIGHT 0
 
-static const char *sensor_names[] = {
-    "CMW_UNKNOWN", "CMW_VD66GY", "CMW_IMX335", "CMW_VD55G1", "CMW_VD1943",
-};
-
 static CMW_Sensor_Name_t sensor;
 static int is_sensor_valid = 0;
-
-static int CAM_getFlipMode(CMW_Sensor_Name_t sensor) {
-    int sensor_mirror_flip = CMW_MIRRORFLIP_NONE;
-    int sensor_name_idx = 0;
-
-    switch (sensor) {
-        case CMW_VD66GY_Sensor:
-            sensor_mirror_flip = SENSOR_VD66GY_FLIP;
-            sensor_name_idx = 1;
-            break;
-        case CMW_IMX335_Sensor:
-            sensor_mirror_flip = SENSOR_IMX335_FLIP;
-            sensor_name_idx = 2;
-            break;
-        case CMW_VD55G1_Sensor:
-            sensor_mirror_flip = SENSOR_VD55G1_FLIP;
-            sensor_name_idx = 3;
-            break;
-        case CMW_VD1943_Sensor:
-            sensor_mirror_flip = SENSOR_VD1943_FLIP;
-            sensor_name_idx = 4;
-            break;
-        default:
-            assert(0);
-    }
-    printf("Detected %s\n", sensor_names[sensor_name_idx]);
-
-    return sensor_mirror_flip;
-}
 
 static int CAM_FormatToBpp(int dcmipp_output_format) {
     int bpp = 0;
@@ -176,7 +138,9 @@ void CAM_Init(CAM_conf_t *conf) {
     cam_conf.width = SENSOR_WIDTH;
     cam_conf.height = SENSOR_HEIGHT;
     cam_conf.fps = conf->fps;
-    cam_conf.mirror_flip = CAM_getFlipMode(sensor);
+    assert(sensor == CMW_IMX335_Sensor);
+    printf("Detected IMX335\n");
+    cam_conf.mirror_flip = SENSOR_IMX335_FLIP;
 
     ret = CMW_CAMERA_Init(&cam_conf, NULL);
     assert(ret == CMW_ERROR_NONE);

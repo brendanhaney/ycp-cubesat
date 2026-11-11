@@ -19,9 +19,6 @@
 /* Includes ------------------------------------------------------------------*/
 #include "isp_core.h"
 #include "isp_services.h"
-#ifdef ISP_MW_TUNING_TOOL_SUPPORT
-#include "isp_cmd_parser.h"
-#endif
 
 /* Private types -------------------------------------------------------------*/
 typedef enum {
@@ -1491,13 +1488,9 @@ bool ISP_SVC_Misc_SensorDelayMeasureIsRunning()
   */
 ISP_StatusTypeDef ISP_SVC_Misc_SendSensorDelayMeasure(ISP_HandleTypeDef *hIsp, ISP_SensorDelayTypeDef *pSensorDelay)
 {
-#ifdef ISP_MW_TUNING_TOOL_SUPPORT
-  return ISP_CmdParser_SendSensorDelayMeasure(hIsp, pSensorDelay);
-#else
   (void)hIsp; /* unused */
   (void)pSensorDelay; /* unused */
   return ISP_OK;
-#endif
 }
 
 /**
