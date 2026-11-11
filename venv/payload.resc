@@ -1,10 +1,12 @@
-$global.payload_elf ?= @build/payload.elf
+# Run `make sim-payload` first to build the application verification image.
+# The installed Renode has no complete N657 camera/JPEG/SD SoC model.
+$global.payload_elf ?= @build/payload-renode/payload-test.elf
+$global.payload_card ?= @build/payload-renode/card.img
 mach create "payload"
-machine LoadPlatformDescription @platforms/cpus/stm32h7.repl
-machine UnregisterFromParent sysbus.spi4
-machine LoadPlatformDescriptionFromString "spi4: Bus.ExternalControlBusPeripheral @ sysbus 0x40013400 { size: 0x400 }"
+machine LoadPlatformDescription @venv/payload_camera.repl
 showAnalyzer sysbus.usart1
 sysbus LoadELF $global.payload_elf
-sysbus.cpu VectorTableOffset 0x08000000
-sysbus.cpu SP `sysbus ReadDoubleWord 0x08000000`
-sysbus.cpu PC `sysbus ReadDoubleWord 0x08000004`
+sysbus LoadBinary $global.payload_card 0x60000000
+sysbus.cpu VectorTableOffset 0x34180400
+sysbus.cpu SP `sysbus ReadDoubleWord 0x34180400`
+sysbus.cpu PC `sysbus ReadDoubleWord 0x34180404`

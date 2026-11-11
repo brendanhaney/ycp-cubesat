@@ -14,6 +14,7 @@ BUILD = ./build
 
 RESC_DIR = ./venv
 NUCLEO_BUILD ?= $(BUILD)/nucleo-h753zi
+PAYLOAD_BOARD ?= NUCLEO-N657X0-Q
 
 define build
 	@mkdir -p $(BUILD)
@@ -31,7 +32,7 @@ radio:
 	$(call build,radio)
 
 payload:
-	$(call build,payload)
+	$(MAKE) -f scripts/payload.mk BUILD="$(BUILD)" PAYLOAD_BOARD="$(PAYLOAD_BOARD)"
 
 all: avionics radio payload
 
@@ -60,11 +61,11 @@ $(BUILD)/test-spi-model: $(SPI_MODEL) $(RESC_DIR)/peripherals/spi_model.h tests/
 	@mkdir -p $(BUILD)
 	$(HOST_CC) $(HOST_CFLAGS) -I$(RESC_DIR)/peripherals $(SPI_MODEL) tests/test_spi_model.c -o $@
 
-sim: all $(BUILD)/spi-renode
-	python3 $(RESC_DIR)/run_spi.py --build $(BUILD)
+sim: all $(BUILD)/spi-renode sim-payload
+	python3 $(RESC_DIR)/run_spi.py --build $(BUILD) --module avionics-radio
 
-sim-headless: all $(BUILD)/spi-renode
-	python3 $(RESC_DIR)/run_spi.py --build $(BUILD) --headless
+sim-headless: all $(BUILD)/spi-renode sim-payload
+	python3 $(RESC_DIR)/run_spi.py --build $(BUILD) --module avionics-radio --headless
 
 sim-avionics: avionics $(BUILD)/spi-renode
 	python3 $(RESC_DIR)/run_spi.py --build $(BUILD) --module avionics
@@ -72,12 +73,12 @@ sim-avionics: avionics $(BUILD)/spi-renode
 sim-radio: radio $(BUILD)/spi-renode
 	python3 $(RESC_DIR)/run_spi.py --build $(BUILD) --module radio
 
-sim-payload: payload $(BUILD)/spi-renode
-	python3 $(RESC_DIR)/run_spi.py --build $(BUILD) --module payload
+sim-payload: payload
+	python3 -B tests/test_payload_renode.py --build $(BUILD)/payload-renode
 
 # The legacy firmware SPI integration test expects an avionics SPI demo;
 # current avionics firmware runs the sensor polling loop instead.
-test: all test-uart test-i2c test-thermometer test-barometer $(BUILD)/test-spi-model
+test: all test-uart test-i2c test-thermometer test-barometer test-payload $(BUILD)/test-spi-model
 	$(BUILD)/test-spi-model
 
 FLASH_TOOL = st-flash
@@ -86,11 +87,16 @@ FLASH_ADDR = 0x08000000
 .PHONY: nucleo-avionics nucleo-radio nucleo-payload flash-avionics flash-radio flash-payload uart-listen test-uart test-i2c test-thermometer test-barometer
 
 # Keep board binaries separate from the USART1 images used by Renode.
-nucleo-avionics nucleo-radio nucleo-payload: nucleo-%:
+nucleo-avionics nucleo-radio: nucleo-%:
 	$(MAKE) $* BUILD="$(NUCLEO_BUILD)" CPPFLAGS="$(CPPFLAGS) -DCUBESAT_NUCLEO_H753ZI"
 
-flash-avionics flash-radio flash-payload: flash-%: nucleo-%
+nucleo-payload: payload
+
+flash-avionics flash-radio: flash-%: nucleo-%
 	$(FLASH_TOOL) --reset write $(NUCLEO_BUILD)/$*.rom $(FLASH_ADDR)
+
+flash-payload:
+	@echo "Payload flashing implemented in another branch"
 
 uart-listen:
 	python3 scripts/listen_uart.py $(UART_ARGS)
@@ -108,3 +114,13 @@ test-thermometer:
 
 test-barometer:
 	python3 -B tests/test_ms5611.py
+
+.PHONY: test-payload test-payload-drivers
+
+test-payload: payload test-payload-drivers
+	python3 -B tests/test_payload_layout.py --elf $(BUILD)/payload.elf --board $(PAYLOAD_BOARD)
+	python3 -B tests/test_payload_renode.py --build $(BUILD)/payload-renode
+
+test-payload-drivers:
+	python3 -B tests/test_camera_conversion.py
+	python3 -B tests/test_payload_storage.py

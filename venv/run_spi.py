@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Launch Renode's GUI and C SPI adapter, or run a bounded headless simulation."""
 import argparse
+import os
 import pathlib
 import socket
 import subprocess
@@ -13,10 +14,18 @@ def run_simulation(build, module="all", test=False, headless=False, radio_image=
     headless = headless or test
     build = pathlib.Path(build).resolve()
     build.mkdir(parents=True, exist_ok=True)
+    all_modules = module == "all"
+    if not test and module in ("all", "payload"):
+        subprocess.run(
+            ["python3", "-B", str(ROOT / "tests/test_payload_renode.py"),
+             "--build", str(build / "payload-renode")], cwd=ROOT, check=True)
+        if module == "payload":
+            return build / "payload-renode/payload-renode.log"
+        module = "avionics-radio"
     log_path = build / ("spi-integration.log" if test else f"spi-{module}.log")
     image_bytes = None
     capture = None
-    if module == "all" and not test and radio_image is not None:
+    if all_modules and not test and radio_image is not None:
         radio_image = pathlib.Path(radio_image).resolve()
         image_bytes = radio_image.stat().st_size
         capture = build / f"radio-image-{time.time_ns()}.uart.txt"
@@ -24,7 +33,12 @@ def run_simulation(build, module="all", test=False, headless=False, radio_image=
     with socket.socket() as reservation:
         reservation.bind(("127.0.0.1", 0))
         port = reservation.getsockname()[1]
-    modules = ("avionics", "radio", "payload") if module == "all" else (module,)
+    if module == "all":
+        modules = ("avionics", "radio", "payload")
+    elif module == "avionics-radio":
+        modules = ("avionics", "radio")
+    else:
+        modules = (module,)
     commands = ["include @venv/common.resc", f"$spi_port={port}"]
     for name in modules:
         elf = "radio-image-sender.elf" if name == "avionics" and capture else name + ".elf"
@@ -39,10 +53,14 @@ def run_simulation(build, module="all", test=False, headless=False, radio_image=
     options = ["--disable-gui", "--console", "--plain"] if headless else []
     adapter = None
     adapter_log_path = build / f"spi-{module}-adapter.log"
+    environment = dict(os.environ)
+    environment["XDG_CONFIG_HOME"] = str(build / "renode-config")
+    environment["XDG_CACHE_HOME"] = str(build / "renode-cache")
     with log_path.open("w") as log:
         renode = subprocess.Popen(
             ["renode", *options, "-e", "; ".join(commands)],
-            cwd=ROOT, stdin=subprocess.PIPE if headless else subprocess.DEVNULL,
+            cwd=ROOT, env=environment,
+            stdin=subprocess.PIPE if headless else subprocess.DEVNULL,
             stdout=log, stderr=subprocess.STDOUT,
             text=True,
         )
@@ -129,7 +147,7 @@ def run_simulation(build, module="all", test=False, headless=False, radio_image=
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build", default=ROOT / "build", type=pathlib.Path)
-    parser.add_argument("--module", choices=("all", "avionics", "radio", "payload"), default="all")
+    parser.add_argument("--module", choices=("all", "avionics-radio", "avionics", "radio", "payload"), default="all")
     parser.add_argument("--headless", action="store_true", help="run without windows and exit after the demo")
     parser.add_argument(
         "--radio-image", type=pathlib.Path,

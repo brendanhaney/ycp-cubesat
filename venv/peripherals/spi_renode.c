@@ -80,8 +80,9 @@ static void on_ready(void *user_data, renode_gpio_event_data_t *event) {
 static void connect_simulation(struct spi_simulation *simulation, const char *module) {
     const char *names[] = {"radio", "payload"};
     int all = !strcmp(module, "all");
+    int h7_bus = !strcmp(module, "avionics-radio");
 
-    if (all || !strcmp(module, "avionics")) {
+    if (all || h7_bus || !strcmp(module, "avionics")) {
         spi_renode_check(renode_get_machine(simulation->renode, "avionics", &simulation->master));
         spi_renode_check(renode_get_gpio(simulation->master, "sysbus.gpioPortE", &simulation->gpio_e));
         spi_renode_check(renode_get_gpio(simulation->master, "sysbus.gpioPortB", &simulation->gpio_b));
@@ -93,7 +94,7 @@ static void connect_simulation(struct spi_simulation *simulation, const char *mo
         struct spi_endpoint *endpoint = &simulation->endpoints[i];
         endpoint->simulation = simulation;
         endpoint->index = i;
-        if (all || !strcmp(module, names[i])) {
+        if (all || (h7_bus && i == 0) || !strcmp(module, names[i])) {
             spi_renode_check(renode_get_machine(simulation->renode, names[i], &endpoint->machine));
             spi_renode_check(renode_get_bus_peripheral(endpoint->machine, "sysbus.spi4", &endpoint->peripheral));
             spi_renode_check(renode_register_sysbus_access_callback(endpoint->peripheral,
@@ -118,16 +119,16 @@ int main(int argc, char **argv) {
 
     if ((argc != 3 && argc != 4) ||
         (argc == 4 && strcmp(argv[3], "--stay-connected")) ||
-        (strcmp(argv[2], "all") && strcmp(argv[2], "avionics") &&
+        (strcmp(argv[2], "all") && strcmp(argv[2], "avionics-radio") && strcmp(argv[2], "avionics") &&
         strcmp(argv[2], "radio") && strcmp(argv[2], "payload"))) {
-        fprintf(stderr, "Usage: %s PORT all|avionics|radio|payload [--stay-connected]\n", argv[0]);
+        fprintf(stderr, "Usage: %s PORT all|avionics-radio|avionics|radio|payload [--stay-connected]\n", argv[0]);
         return EXIT_FAILURE;
     }
     setvbuf(stdout, NULL, _IOLBF, 0);
     spi_renode_check(renode_connect(argv[1], &simulation.renode));
     connect_simulation(&simulation, argv[2]);
     puts("C SPI peripheral models connected");
-    spi_renode_check(renode_create_time(!strcmp(argv[2], "all") ? 10 : 1,
+    spi_renode_check(renode_create_time((!strcmp(argv[2], "all") || !strcmp(argv[2], "avionics-radio")) ? 10 : 1,
         TU_MILLISECONDS, &duration));
     spi_renode_check(renode_run_for(simulation.renode, duration));
     printf("Firmware SPI bus: %u bytes, %u selection errors\n",
