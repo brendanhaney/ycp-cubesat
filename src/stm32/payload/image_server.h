@@ -4,15 +4,23 @@
 #include <stdint.h>
 #include "image_protocol.h"
 
+#define IMAGE_TRANSFER_TIMEOUT_MS 3000U
+
 /* Called only from the main loop, between capture/SD-save operations. */
 void image_server_init(uint8_t response[IMAGE_SPI_FRAME_SIZE]);
-/* Returns one for a response, zero for an ignored NOP or invalid frame. */
+/* Returns one for a response, zero for an ignored NOP or invalid frame.
+ * The first NOP after expiry publishes STALE instead of the old success. */
 int image_server_handle(const uint8_t request[IMAGE_SPI_FRAME_SIZE],
                          uint8_t response[IMAGE_SPI_FRAME_SIZE]);
+/* A new-image INFO holds off captures until release or three seconds without
+ * a successful request. Calling this also expires an abandoned snapshot. */
+int image_server_transfer_active(void);
 
 extern volatile uint32_t debug_image_info_requests;
 extern volatile uint32_t debug_image_chunks;
 extern volatile uint32_t debug_image_bytes;
 extern volatile uint32_t debug_image_errors;
+extern volatile uint32_t debug_image_transfer_active;
+extern volatile uint32_t debug_image_timeouts;
 
 #endif

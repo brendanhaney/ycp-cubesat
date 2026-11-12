@@ -7,6 +7,16 @@
 /* Fixed-size, mode-0 transfers on Arduino D10..D13, without READY. */
 #define PAYLOAD_SPI_SIZE IMAGE_SPI_FRAME_SIZE
 
+/* H753 SPI1 prescaler encoding: 5 = 1 MHz, 4 = 2 MHz, 3 = 4 MHz
+ * with the existing 64 MHz HSI source. Does not change any RCC clocks. */
+#ifndef PAYLOAD_SPI_MASTER_MBR
+#define PAYLOAD_SPI_MASTER_MBR 3U
+#endif
+#if PAYLOAD_SPI_MASTER_MBR > 7 || PAYLOAD_SPI_MASTER_MBR < 0
+#error "PAYLOAD_SPI_MASTER_MBR must be between 0 and 7"
+#endif
+#define PAYLOAD_SPI_MASTER_CLOCK_HZ (64000000U / (2U << PAYLOAD_SPI_MASTER_MBR))
+
 /* H753: SPI1 master. N657: SPI5 slave. */
 int payload_spi_init(void);
 /* H753 only: clocks one complete frame; returns 0 or -1 on failure. */

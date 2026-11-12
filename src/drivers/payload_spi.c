@@ -89,8 +89,14 @@ static int prepare(const uint8_t *tx) {
 #else
     LINK_REG(0x00U) = 0;
 #endif
+    // Change only the master's SPI divider, not CPU or peripheral clocks.
+#if defined(CUBESAT_STM32H7)
+    const uint32_t prescaler = PAYLOAD_SPI_MASTER_MBR;
+#else
+    const uint32_t prescaler = 5U; // Ignored in slave mode; retain its setup.
+#endif
     // Eight-bit DSIZE/CRCSIZE; H753 ES0392 2.22.5 applies even without CRC.
-    LINK_REG(0x08U) = 7U | (7U << 16) | (5U << 28); // HSI/64 = 1 MHz.
+    LINK_REG(0x08U) = 7U | (7U << 16) | (prescaler << 28);
 #if defined(CUBESAT_STM32H7)
     LINK_REG(0x0CU) = SPI_CFG2_AFCNTR | SPI_CFG2_MASTER | SPI_CFG2_SSM;
     LINK_REG(0x04U) = PAYLOAD_SPI_SIZE;
