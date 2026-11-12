@@ -67,7 +67,8 @@ PAYLOAD_SOURCES = $(wildcard $(PAYLOAD_APP)/*.c $(PAYLOAD_DRIVERS)/*.c) \
                   $(PAYLOAD_CAMERA)/sensors/imx335/imx335.c \
                   $(PAYLOAD_CAMERA)/sensors/imx335/imx335_reg.c \
                   $(wildcard $(PAYLOAD_ISP)/Src/*.c) \
-                  src/drivers/fatfs/ff.c src/drivers/payload_spi.c
+                  src/drivers/fatfs/ff.c src/drivers/payload_spi.c \
+                  src/utils/image_protocol.c src/utils/crc.c
 PAYLOAD_STARTUP = $(PAYLOAD_DEVICE)/Source/Templates/gcc/startup_stm32n657xx.s
 PAYLOAD_OBJECTS = $(addprefix $(PAYLOAD_OBJDIR)/,$(PAYLOAD_SOURCES:.c=.o) $(PAYLOAD_STARTUP:.s=.o))
 PAYLOAD_FLAGS = $(PAYLOAD_ARCH) $(PAYLOAD_CFLAGS) -std=gnu11 -Wall \

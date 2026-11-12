@@ -189,6 +189,14 @@ uart-listen:
 uart-view:
 	python3 scripts/view_avionics.py $(UART_ARGS)
 
+.PHONY: images-view test-images
+images-view:
+	python3 scripts/view_images.py $(UART_ARGS)
+
+test-images:
+	python3 -B tests/test_image_protocol.py
+	python3 -B tests/test_view_images.py
+
 test-uart:
 	python3 -B tests/test_uart.py
 	python3 -B tests/test_listen_uart.py
@@ -211,6 +219,7 @@ test-payload: payload test-payload-drivers test-payload-launcher test-capture-pa
 	python3 -B tests/test_payload_renode.py --build $(RENODE_BUILD)/payload-renode
 
 test-payload-drivers:
+	python3 -B tests/test_image_protocol.py
 	python3 -B tests/test_payload_spi_link.py
 	python3 -B tests/test_camera_conversion.py
 	python3 -B tests/test_payload_storage.py

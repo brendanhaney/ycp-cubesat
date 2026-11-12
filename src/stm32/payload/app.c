@@ -30,6 +30,7 @@
 #include "stm32n6xx_nucleo.h"
 #include "utils.h"
 #include "ff.h"
+#include "image_protocol.h"
 
 #ifndef APP_VERSION_STRING
 #define APP_VERSION_STRING "dev"
@@ -47,6 +48,8 @@ static volatile uint32_t camera_error;
 static volatile int held_capture = -1;
 static uint32_t active_capture;
 static int camera_initialized;
+static payload_saved_image_t latest_saved_image;
+static uint32_t next_image_num = 1;
 
 volatile uint32_t debug_frame_events = 0;
 volatile uint32_t debug_isp_updates = 0;
@@ -136,16 +139,19 @@ static void JPEG_SaveToSD(void) {
         return;
     }
 
-    /* Find the first available image filename */
-    for (image_num = 1; image_num <= 999; image_num++) {
+    /* Scan existing names once per boot, then continue from the next number.
+     * CREATE_NEW still protects files added by another writer. Never wrap. */
+    for (image_num = next_image_num; image_num <= 999; image_num++) {
         snprintf(debug_jpeg_sd_filename, sizeof(debug_jpeg_sd_filename), "0:/IMAGE%03lu.JPG",
                  (unsigned long)image_num);
 
         result = f_open(&debug_jpeg_file, debug_jpeg_sd_filename, FA_CREATE_NEW | FA_WRITE);
 
         /* Existing image: try the next number */
-        if (result == FR_EXIST)
+        if (result == FR_EXIST) {
+            next_image_num = image_num + 1;
             continue;
+        }
 
         debug_jpeg_sd_open = result;
 
@@ -154,6 +160,8 @@ static void JPEG_SaveToSD(void) {
             return;
         }
 
+        /* Creation consumes the name even if writing or verification fails. */
+        next_image_num = image_num + 1;
         debug_jpeg_sd_index = image_num;
         break;
     }
@@ -180,6 +188,13 @@ static void JPEG_SaveToSD(void) {
         debug_jpeg_sd_close == FR_OK) {
         debug_jpeg_sd_saved_count++;
         JPEG_VerifyOnSD();
+        if (debug_jpeg_sd_verified) {
+            memcpy(latest_saved_image.filename, debug_jpeg_sd_filename,
+                   sizeof(latest_saved_image.filename));
+            latest_saved_image.image_id = debug_jpeg_sd_index;
+            latest_saved_image.length = debug_jpeg_len;
+            latest_saved_image.crc32 = image_crc32(debug_jpeg_buffer, debug_jpeg_len);
+        }
     }
 
     debug_jpeg_sd_done = 1;
@@ -413,6 +428,13 @@ payload_status_t payload_save_jpeg(const payload_image_t *image) {
         return PAYLOAD_STORAGE_ERROR;
 
     return PAYLOAD_OK;
+}
+
+int payload_get_latest_saved_image(payload_saved_image_t *image) {
+    if (image == NULL || latest_saved_image.length == 0)
+        return 0;
+    *image = latest_saved_image;
+    return 1;
 }
 
 void app_capture_step(int automatic_capture) {

@@ -4,9 +4,9 @@
 
 #define CRC_POLY 0xedb88320
 
-uint32_t crc32(uint32_t crc, void *buff, size_t len) {
+uint32_t crc32(uint32_t crc, const void *buff, size_t len) {
 
-    uint8_t *bytes = (uint8_t *) buff;
+    const uint8_t *bytes = buff;
 
     int k;
 

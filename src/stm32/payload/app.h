@@ -41,10 +41,20 @@ typedef struct {
     uint32_t height;
 } payload_image_t;
 
+/* Metadata survives release/reuse of the camera's JPEG buffer. Saved files
+ * use distinct names, so a transfer can keep reading an older snapshot. */
+typedef struct {
+    char filename[20];
+    uint32_t image_id;
+    uint32_t length;
+    uint32_t crc32;
+} payload_saved_image_t;
+
 payload_status_t payload_camera_init(void);
 payload_status_t payload_camera_poll(void);
 payload_status_t payload_take_jpeg(payload_image_t *image, uint32_t timeout_ms);
 payload_status_t payload_save_jpeg(const payload_image_t *image);
+int payload_get_latest_saved_image(payload_saved_image_t *image);
 void payload_release_image(void);
 void app_capture_step(int automatic_capture);
 
