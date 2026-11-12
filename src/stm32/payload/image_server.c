@@ -15,6 +15,11 @@ static uint8_t cached_request[IMAGE_SPI_FRAME_SIZE];
 static int cached_valid;
 static uint32_t last_activity;
 static int expired_response_pending;
+static uint32_t observed_image_id;
+static uint32_t offer_started;
+static uint32_t reply_started;
+static int awaiting_info;
+static int awaiting_reply;
 
 volatile uint32_t debug_image_info_requests;
 volatile uint32_t debug_image_chunks;
@@ -22,6 +27,30 @@ volatile uint32_t debug_image_bytes;
 volatile uint32_t debug_image_errors;
 volatile uint32_t debug_image_transfer_active;
 volatile uint32_t debug_image_timeouts;
+volatile uint32_t debug_image_capture_wait;
+volatile uint32_t debug_image_handoff_timeouts;
+
+static void observe_latest_image(void) {
+    payload_saved_image_t latest;
+    if (payload_get_latest_saved_image(&latest) && latest.image_id != observed_image_id) {
+        observed_image_id = latest.image_id;
+        offer_started = HAL_GetTick();
+        awaiting_info = 1;
+    }
+}
+
+static void expire_handoff_waits(void) {
+    const uint32_t now = HAL_GetTick();
+    if (awaiting_info && (uint32_t)(now - offer_started) >= IMAGE_TRANSFER_TIMEOUT_MS) {
+        awaiting_info = 0;
+        debug_image_handoff_timeouts++;
+    }
+    if (awaiting_reply && (uint32_t)(now - reply_started) >= IMAGE_TRANSFER_TIMEOUT_MS) {
+        awaiting_reply = 0;
+        debug_image_handoff_timeouts++;
+    }
+    debug_image_capture_wait = (awaiting_info ? 1U : 0U) | (awaiting_reply ? 2U : 0U);
+}
 
 static int close_snapshot(void) {
     int result = 0;
@@ -54,10 +83,19 @@ int image_server_transfer_active(void) {
     return snapshot_open;
 }
 
+int image_server_capture_ready(void) {
+    observe_latest_image();
+    expire_handoff_waits();
+    return !image_server_transfer_active() && !awaiting_info && !awaiting_reply;
+}
+
 void image_server_init(uint8_t response[IMAGE_SPI_FRAME_SIZE]) {
     close_snapshot();
     cached_valid = 0;
     expired_response_pending = 0;
+    observed_image_id = 0;
+    awaiting_info = awaiting_reply = 0;
+    debug_image_capture_wait = 0;
     image_frame_init(response, IMAGE_OP_INFO | IMAGE_RESPONSE_FLAG,
                      IMAGE_STATUS_BUSY, 0, 0, 0, 0, 0);
     image_frame_seal(response);
@@ -65,6 +103,10 @@ void image_server_init(uint8_t response[IMAGE_SPI_FRAME_SIZE]) {
 
 int image_server_handle(const uint8_t request[IMAGE_SPI_FRAME_SIZE],
                          uint8_t response[IMAGE_SPI_FRAME_SIZE]) {
+    /* Observe before INFO can acknowledge a just-published image; otherwise
+     * the next main-loop check could incorrectly start another offer wait. */
+    observe_latest_image();
+    expire_handoff_waits();
     image_server_transfer_active();
     if (!image_frame_valid(request)) {
         debug_image_errors++;
@@ -75,6 +117,12 @@ int image_server_handle(const uint8_t request[IMAGE_SPI_FRAME_SIZE],
     const uint32_t sequence = image_get_u32(request + 8);
     const uint32_t image_id = image_get_u32(request + 12);
     const uint32_t offset = image_get_u32(request + 16);
+
+    /* This complete exchange has clocked out the previously queued reply.
+     * Clearing before cached-request handling also lets an exact terminal
+     * retry acknowledge delivery without restarting its wait. */
+    awaiting_reply = 0;
+    debug_image_capture_wait = awaiting_info ? 1U : 0U;
 
     if (command == IMAGE_OP_NOP) {
         if (expired_response_pending) {
@@ -112,6 +160,7 @@ int image_server_handle(const uint8_t request[IMAGE_SPI_FRAME_SIZE],
         } else if (!payload_get_latest_saved_image(&latest)) {
             status = IMAGE_STATUS_NO_IMAGE;
         } else {
+            awaiting_info = 0;
             image_put_u32(response + 12, latest.image_id);
             image_put_u32(response + 20, latest.length);
             image_put_u32(response + 24, latest.crc32);
@@ -127,6 +176,9 @@ int image_server_handle(const uint8_t request[IMAGE_SPI_FRAME_SIZE],
                     else
                         snapshot = latest;
                 }
+            } else {
+                awaiting_reply = 1;
+                reply_started = HAL_GetTick();
             }
         }
     } else if (command == IMAGE_OP_READ) {
@@ -153,6 +205,10 @@ int image_server_handle(const uint8_t request[IMAGE_SPI_FRAME_SIZE],
             status = IMAGE_STATUS_STALE;
         else if (close_snapshot())
             status = IMAGE_STATUS_IO_ERROR;
+        if (status == IMAGE_STATUS_OK) {
+            awaiting_reply = 1;
+            reply_started = HAL_GetTick();
+        }
     } else {
         status = IMAGE_STATUS_BAD_REQUEST;
     }
@@ -175,5 +231,6 @@ int image_server_handle(const uint8_t request[IMAGE_SPI_FRAME_SIZE],
     memcpy(cached_request, request, IMAGE_SPI_FRAME_SIZE);
     cached_valid = 1;
     memcpy(cached_response, response, IMAGE_SPI_FRAME_SIZE);
+    debug_image_capture_wait = (awaiting_info ? 1U : 0U) | (awaiting_reply ? 2U : 0U);
     return 1;
 }

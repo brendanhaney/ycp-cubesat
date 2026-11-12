@@ -131,31 +131,23 @@ int main(void) {
 
     }
 
-    uint32_t last_capture = HAL_GetTick();
-
     while (1) {
 
         /* Process INFO/READ before deciding whether the next capture can run. */
         service_payload_spi();
 
-        if (image_server_transfer_active()) {
+        if (!image_server_capture_ready()) {
             /* Leave debugger capture requests pending too: app_capture_step
              * would consume them even if automatic_capture were false. */
             payload_camera_poll();
         } else {
-            const uint32_t now = HAL_GetTick();
-            const int automatic_capture = !debug_capture_request && !debug_capture_ready &&
-                (uint32_t)(now - last_capture) >= CAPTURE_INTERVAL_MS;
+            const int automatic_capture = !debug_capture_request && !debug_capture_ready;
             const int capture_requested = automatic_capture || debug_capture_request;
 
             if (capture_requested)
                 payload_spi_pause();
 
             app_capture_step(automatic_capture);
-
-            /* Leave a service window even when a save exceeds the interval. */
-            if (capture_requested)
-                last_capture = HAL_GetTick();
         }
 
         // SPI requests wait until the complete save finishes.
