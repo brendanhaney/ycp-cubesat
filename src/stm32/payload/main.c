@@ -28,12 +28,16 @@
 #include "app_config.h"
 
 #include "storage.h"
+#include "payload_spi.h"
 
 extern uint8_t _sdata;
 extern uint8_t __uncached_bss_start__;
 extern uint8_t __uncached_bss_end__;
 
 UART_HandleTypeDef huart1;
+volatile uint32_t debug_spi_requests = 0;
+volatile uint32_t debug_spi_errors = 0;
+static int spi_initialized;
 static volatile uint32_t debug_sram3_readback = 0;
 static volatile uint32_t debug_sram3_pass = 0;
 
@@ -60,6 +64,7 @@ static void IAC_Config();
 static void CONSOLE_Config(void);
 static void Setup_Mpu(void);
 static void board_init(void);
+static void service_payload_spi(void);
 
 /**
  * @brief  Main program
@@ -94,14 +99,22 @@ int main(void) {
 
     board_init();
 
+    spi_initialized = payload_spi_init() == 0;
+    if (!spi_initialized) {
+        debug_spi_errors++;
+        printf("Payload SPI init failed\n");
+    }
+
     debug_capture_status = payload_camera_init();
 
     if (debug_capture_status != PAYLOAD_OK) {
 
         BSP_LED_On(LED_RED);
 
-        while (1)
+        while (1) {
+            service_payload_spi();
             __WFI();
+        }
 
     }
 
@@ -117,11 +130,40 @@ int main(void) {
         if (automatic_capture)
             last_capture = now;
 
-        // Take picture
+        service_payload_spi();
+
+        if (automatic_capture || debug_capture_request)
+            payload_spi_pause();
+
+        // Take picture. SPI requests wait until the complete save finishes.
         app_capture_step(automatic_capture);
+
+        service_payload_spi();
 
         __WFI();
 
+    }
+}
+
+static void service_payload_spi(void) {
+
+    if (!spi_initialized)
+        return;
+
+    const int result = payload_spi_service();
+
+    if (result < 0) {
+
+        debug_spi_errors++;
+
+        return;
+    }
+
+    if (result > 0) {
+
+        debug_spi_requests++;
+
+        printf("Payload SPI RX: GETSTR; TX: PAYLOAD\n");
     }
 }
 

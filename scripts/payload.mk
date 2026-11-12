@@ -31,7 +31,7 @@ PAYLOAD_OBJDIR = $(BUILD)/payload-objects/$(PAYLOAD_BOARD)
 
 # Match Cube's FPv5 configuration, which enables integer MVE instructions only.
 PAYLOAD_ARCH = -mcpu=cortex-m55+nomve.fp -mthumb -mcmse -mfpu=fpv5-d16 -mfloat-abi=hard
-PAYLOAD_CPPFLAGS = -DSTM32N657xx -DUSE_FULL_ASSERT -DUSE_FULL_LL_DRIVER \
+PAYLOAD_CPPFLAGS = -DSTM32N657xx -DCUBESAT_STM32N6 -DUSE_FULL_ASSERT -DUSE_FULL_LL_DRIVER \
                   -DVECT_TAB_SRAM \
                   -DSTM32N6570_NUCLEO_REV $(CPPFLAGS) $(PAYLOAD_DEFINES)
 
@@ -56,7 +56,8 @@ PAYLOAD_INCLUDES = $(PAYLOAD_APP) $(PAYLOAD_DRIVERS) \
                    $(PAYLOAD_CMSIS)/Include $(PAYLOAD_DEVICE)/Include \
                    $(PAYLOAD_BOARD_DIR) \
                    $(PAYLOAD_CAMERA) $(PAYLOAD_CAMERA)/sensors \
-                   $(PAYLOAD_CAMERA)/sensors/imx335 $(PAYLOAD_ISP)/Inc src/drivers/fatfs
+                   $(PAYLOAD_CAMERA)/sensors/imx335 $(PAYLOAD_ISP)/Inc src/drivers/fatfs \
+                   include src/drivers
 
 PAYLOAD_SOURCES = $(wildcard $(PAYLOAD_APP)/*.c $(PAYLOAD_DRIVERS)/*.c) \
                   $(wildcard $(PAYLOAD_HAL)/Src/*.c) $(PAYLOAD_BOARD_SOURCES) \
@@ -66,7 +67,7 @@ PAYLOAD_SOURCES = $(wildcard $(PAYLOAD_APP)/*.c $(PAYLOAD_DRIVERS)/*.c) \
                   $(PAYLOAD_CAMERA)/sensors/imx335/imx335.c \
                   $(PAYLOAD_CAMERA)/sensors/imx335/imx335_reg.c \
                   $(wildcard $(PAYLOAD_ISP)/Src/*.c) \
-                  src/drivers/fatfs/ff.c
+                  src/drivers/fatfs/ff.c src/drivers/payload_spi.c
 PAYLOAD_STARTUP = $(PAYLOAD_DEVICE)/Source/Templates/gcc/startup_stm32n657xx.s
 PAYLOAD_OBJECTS = $(addprefix $(PAYLOAD_OBJDIR)/,$(PAYLOAD_SOURCES:.c=.o) $(PAYLOAD_STARTUP:.s=.o))
 PAYLOAD_FLAGS = $(PAYLOAD_ARCH) $(PAYLOAD_CFLAGS) -std=gnu11 -Wall \

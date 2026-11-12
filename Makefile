@@ -19,7 +19,7 @@ RESC_DIR = ./venv
 
 FIRMWARE_CFLAGS = $(filter-out -mcpu=% -march=% -mfpu=% -mfloat-abi=% -mcmse -mno-cmse -mthumb -marm,$(CFLAGS))
 stm32h7_FLAGS = -mcpu=cortex-m7 -mthumb -mfloat-abi=soft -DCUBESAT_STM32H7
-COMMON_SOURCES = src/drivers/uart.c src/drivers/spi.c \
+COMMON_SOURCES = src/drivers/uart.c src/drivers/spi.c src/drivers/payload_spi.c \
                  $(wildcard src/utils/*.c) src/drivers/startup.c
 stm32h7_SOURCES = src/drivers/i2c.c src/drivers/tmp117.c src/drivers/ms5611.c \
                   src/drivers/bmi270.c src/drivers/bosch/bmi2.c src/drivers/bosch/bmi270.c \
@@ -211,6 +211,7 @@ test-payload: payload test-payload-drivers test-payload-launcher test-capture-pa
 	python3 -B tests/test_payload_renode.py --build $(RENODE_BUILD)/payload-renode
 
 test-payload-drivers:
+	python3 -B tests/test_payload_spi_link.py
 	python3 -B tests/test_camera_conversion.py
 	python3 -B tests/test_payload_storage.py
 
