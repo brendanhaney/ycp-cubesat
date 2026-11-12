@@ -25,8 +25,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "stm32n6xx_hal_rif.h"
-#include "FreeRTOS.h"
-#include "task.h"
+#include "app_config.h"
 
 #include "storage.h"
 
@@ -55,19 +54,12 @@ static volatile uint32_t debug_span56_done = 0;
 static volatile uint32_t debug_span56_pass = 0;
 static volatile uint32_t debug_span56_first_bad = 0xFFFFFFFFU;
 
-static StaticTask_t main_thread;
-static StackType_t main_thread_stack[configMINIMAL_STACK_SIZE];
-
 static void SystemClock_Config(void);
 static void Security_Config();
 static void IAC_Config();
 static void CONSOLE_Config(void);
 static void Setup_Mpu(void);
-static int main_freertos(void);
-static void main_thread_fct(void *arg);
-
-/* This is defined in port.c */
-void vPortSetupTimerInterrupt(void);
+static void board_init(void);
 
 /**
  * @brief  Main program
@@ -98,7 +90,39 @@ int main(void) {
     SCB_EnableDCache();
 #endif
 
-    return main_freertos();
+    __enable_irq();
+
+    board_init();
+
+    debug_capture_status = payload_camera_init();
+
+    if (debug_capture_status != PAYLOAD_OK) {
+
+        BSP_LED_On(LED_RED);
+
+        while (1)
+            __WFI();
+
+    }
+
+    uint32_t last_capture = HAL_GetTick();
+
+    while (1) {
+
+        const uint32_t now = HAL_GetTick();
+
+        const int automatic_capture = !debug_capture_request && !debug_capture_ready &&
+            (uint32_t)(now - last_capture) >= CAPTURE_INTERVAL_MS;
+
+        if (automatic_capture)
+            last_capture = now;
+
+        // Take picture
+        app_capture_step(automatic_capture);
+
+        __WFI();
+
+    }
 }
 
 static void Setup_MpuRegion(uint8_t number, uint32_t start, uint32_t end) {
@@ -273,40 +297,12 @@ static void CONSOLE_Config() {
     }
 }
 
-static int main_freertos() {
-    TaskHandle_t hdl;
-
-    hdl = xTaskCreateStatic(main_thread_fct, "main", configMINIMAL_STACK_SIZE, NULL,
-                            tskIDLE_PRIORITY + 1, main_thread_stack, &main_thread);
-    assert(hdl != NULL);
-
-    vTaskStartScheduler();
-    assert(0);
-
-    return -1;
-}
-
-static void main_thread_fct(void *arg) {
-    uint32_t preemptPriority;
-    uint32_t subPriority;
-    IRQn_Type i;
+static void board_init(void) {
     int ret;
 
-    /* Copy SysTick_IRQn priority set by RTOS and use it as default priorities for IRQs. We are now
-     * sure that all irqs have default priority below or equal to
-     * configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY.
-     */
-    HAL_NVIC_GetPriority(SysTick_IRQn, HAL_NVIC_GetPriorityGrouping(), &preemptPriority,
-                         &subPriority);
-    for (i = PVD_PVM_IRQn; i <= LTDC_UP_ERR_IRQn; i++)
-        HAL_NVIC_SetPriority(i, preemptPriority, subPriority);
-
-    /* Call SystemClock_Config() after vTaskStartScheduler() since it call HAL_Delay() which call
-     * vTaskDelay(). Drawback is that we must call vPortSetupTimerInterrupt() since SystemCoreClock
-     * value has been modified by SystemClock_Config()
-     */
+    for (IRQn_Type i = PVD_PVM_IRQn; i <= LTDC_UP_ERR_IRQn; i++)
+        HAL_NVIC_SetPriority(i, 6, 0);
     SystemClock_Config();
-    vPortSetupTimerInterrupt();
 
     CONSOLE_Config();
 
@@ -456,9 +452,6 @@ static void main_thread_fct(void *arg) {
     LL_APB5_GRP1_EnableClockLowPower(~0);
     LL_MISC_EnableClockLowPower(~0);
 
-    app_run();
-
-    vTaskDelete(NULL);
 }
 
 HAL_StatusTypeDef MX_DCMIPP_ClockConfig(DCMIPP_HandleTypeDef *hdcmipp) {

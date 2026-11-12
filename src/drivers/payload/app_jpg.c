@@ -86,10 +86,14 @@ int JPG_Encode(uint8_t *p_dst, uint8_t *p_src, int dst_size, int src_size) {
             assert(0);
     }
 
+    ctx->jpg_encode_len = 0;
     ret = HAL_JPEG_Encode(&ctx->hjpeg, mcu_buffer, sizeof(mcu_buffer), p_dst, dst_size, 1000);
-    assert(ret == HAL_OK);
-    if (ret)
+    if (ret != HAL_OK) {
+        JPG_conf_t conf = ctx->conf;
+        HAL_JPEG_DeInit(&ctx->hjpeg);
+        JPG_Init(&conf);
         return -1;
+    }
 
     return ctx->jpg_encode_len;
 }
@@ -110,5 +114,7 @@ void HAL_JPEG_MspInit(JPEG_HandleTypeDef *hjpeg) {
 }
 
 void HAL_JPEG_MspDeInit(JPEG_HandleTypeDef *hjpeg) {
+    __HAL_RCC_JPEG_FORCE_RESET();
+    __HAL_RCC_JPEG_RELEASE_RESET();
     __HAL_RCC_JPEG_CLK_DISABLE();
 }

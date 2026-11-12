@@ -87,3 +87,7 @@ void CSI_IRQHandler(void) {
 void DCMIPP_IRQHandler(void) {
     HAL_DCMIPP_IRQHandler(CMW_CAMERA_GetDCMIPPHandle());
 }
+
+void SysTick_Handler(void) {
+    HAL_IncTick();
+}

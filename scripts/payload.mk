@@ -27,14 +27,12 @@ PAYLOAD_HAL = $(PAYLOAD_VENDOR)/HAL
 PAYLOAD_BSP = $(PAYLOAD_VENDOR)/BSP
 PAYLOAD_CAMERA = src/drivers/camera
 PAYLOAD_ISP = $(PAYLOAD_CAMERA)/ISP_Library/isp
-PAYLOAD_RTOS = src/drivers/freertos/Source
-PAYLOAD_RTOS_PORT = $(PAYLOAD_RTOS)/portable/GCC/ARM_CM55_NTZ/non_secure
 PAYLOAD_OBJDIR = $(BUILD)/payload-objects/$(PAYLOAD_BOARD)
 
 # Match Cube's FPv5 configuration, which enables integer MVE instructions only.
 PAYLOAD_ARCH = -mcpu=cortex-m55+nomve.fp -mthumb -mcmse -mfpu=fpv5-d16 -mfloat-abi=hard
 PAYLOAD_CPPFLAGS = -DSTM32N657xx -DUSE_FULL_ASSERT -DUSE_FULL_LL_DRIVER \
-                  -DVECT_TAB_SRAM -DFEAT_FREERTOS \
+                  -DVECT_TAB_SRAM \
                   -DSTM32N6570_NUCLEO_REV $(CPPFLAGS) $(PAYLOAD_DEFINES)
 
 ifneq ($(PAYLOAD_BOARD),NUCLEO-N657X0-Q)
@@ -56,7 +54,7 @@ endif
 PAYLOAD_INCLUDES = $(PAYLOAD_APP) $(PAYLOAD_DRIVERS) \
                    $(PAYLOAD_HAL)/Inc $(PAYLOAD_HAL)/Inc/Legacy \
                    $(PAYLOAD_CMSIS)/Include $(PAYLOAD_DEVICE)/Include \
-                   $(PAYLOAD_BOARD_DIR) $(PAYLOAD_RTOS)/include $(PAYLOAD_RTOS_PORT) \
+                   $(PAYLOAD_BOARD_DIR) \
                    $(PAYLOAD_CAMERA) $(PAYLOAD_CAMERA)/sensors \
                    $(PAYLOAD_CAMERA)/sensors/imx335 $(PAYLOAD_ISP)/Inc src/drivers/fatfs
 
@@ -68,9 +66,6 @@ PAYLOAD_SOURCES = $(wildcard $(PAYLOAD_APP)/*.c $(PAYLOAD_DRIVERS)/*.c) \
                   $(PAYLOAD_CAMERA)/sensors/imx335/imx335.c \
                   $(PAYLOAD_CAMERA)/sensors/imx335/imx335_reg.c \
                   $(wildcard $(PAYLOAD_ISP)/Src/*.c) \
-                  $(PAYLOAD_RTOS)/event_groups.c $(PAYLOAD_RTOS)/list.c \
-                  $(PAYLOAD_RTOS)/queue.c $(PAYLOAD_RTOS)/tasks.c $(PAYLOAD_RTOS)/timers.c \
-                  $(PAYLOAD_RTOS_PORT)/port.c $(PAYLOAD_RTOS_PORT)/portasm.c \
                   src/drivers/fatfs/ff.c
 PAYLOAD_STARTUP = $(PAYLOAD_DEVICE)/Source/Templates/gcc/startup_stm32n657xx.s
 PAYLOAD_OBJECTS = $(addprefix $(PAYLOAD_OBJDIR)/,$(PAYLOAD_SOURCES:.c=.o) $(PAYLOAD_STARTUP:.s=.o))

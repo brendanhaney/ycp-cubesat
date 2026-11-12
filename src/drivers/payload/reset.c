@@ -44,7 +44,6 @@ __attribute__((used, noinline, noreturn)) static void payload_reset_runtime(void
     }
 
     __libc_init_array();
-    /* The FreeRTOS port enables interrupts when it starts the first task. */
     (void)main();
     for (;;) {
         __WFI();

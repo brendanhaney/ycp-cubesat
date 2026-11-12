@@ -125,44 +125,42 @@ static void DCMIPP_PipeInitCapture(CAM_conf_t *cam_conf, int sensor_width, int s
         CAM_EnableYuv(DCMIPP_PIPE1);
 }
 
-void CAM_Init(CAM_conf_t *conf) {
+int CAM_Init(CAM_conf_t *conf) {
     CMW_CameraInit_t cam_conf;
     int ret;
 
     if (!is_sensor_valid) {
-        is_sensor_valid = 1;
         ret = CMW_CAMERA_GetSensorName(&sensor);
-        assert(ret == CMW_ERROR_NONE);
+        if (ret != CMW_ERROR_NONE)
+            return ret;
+        is_sensor_valid = 1;
     }
 
     cam_conf.width = SENSOR_WIDTH;
     cam_conf.height = SENSOR_HEIGHT;
     cam_conf.fps = conf->fps;
-    assert(sensor == CMW_IMX335_Sensor);
+    if (sensor != CMW_IMX335_Sensor)
+        return CMW_ERROR_COMPONENT_FAILURE;
     printf("Detected IMX335\n");
     cam_conf.mirror_flip = SENSOR_IMX335_FLIP;
 
     ret = CMW_CAMERA_Init(&cam_conf, NULL);
-    assert(ret == CMW_ERROR_NONE);
+    if (ret != CMW_ERROR_NONE)
+        return ret;
 
     /* CMW_CAMERA_Init update width height */
     assert(cam_conf.width);
     assert(cam_conf.height);
     DCMIPP_PipeInitCapture(conf, cam_conf.width, cam_conf.height, conf);
+    return CMW_ERROR_NONE;
 }
 
-void CAM_CapturePipe_Start(uint8_t *capture_pipe_dst, uint32_t cam_mode) {
-    int ret;
-
-    ret = CMW_CAMERA_Start(DCMIPP_PIPE1, capture_pipe_dst, cam_mode);
-    assert(ret == CMW_ERROR_NONE);
+int CAM_CapturePipe_Start(uint8_t *capture_pipe_dst, uint32_t cam_mode) {
+    return CMW_CAMERA_Start(DCMIPP_PIPE1, capture_pipe_dst, cam_mode);
 }
 
-void CAM_IspUpdate(void) {
-    int ret;
-
-    ret = CMW_CAMERA_Run();
-    assert(ret == CMW_ERROR_NONE);
+int CAM_IspUpdate(void) {
+    return CMW_CAMERA_Run();
 }
 
 void CAM_Deinit() {
@@ -170,8 +168,4 @@ void CAM_Deinit() {
 
     ret = CMW_CAMERA_DeInit();
     assert(ret == CMW_ERROR_NONE);
-}
-
-void CMW_CAMERA_PIPE_ErrorCallback(uint32_t pipe) {
-    /* FIXME : Need to tune sensor/ipplug so we can remove this implementation */
 }
