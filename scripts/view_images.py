@@ -242,7 +242,7 @@ class ImageReceiver(threading.Thread):
             self.done.set()
 
 
-def receiver_status(receiver, frame=None, *, now=None, decode_errors=0, decode_error=None):
+def receiver_status(receiver, frame=None, *, now=None, decode_error=None):
     """Describe silence, unrelated UART data, a partial image, or the last image."""
     now = time.monotonic() if now is None else now
     if frame is not None:
@@ -258,10 +258,9 @@ def receiver_status(receiver, frame=None, *, now=None, decode_errors=0, decode_e
         image_id, received, total = receiver.pending_image
         progress = f"Receiving image {image_id}: {received:,}/{total:,} bytes ({100 * received / total:.1f}%)"
         details = details + "\n" + progress if frame is not None else progress
-    byte_age = (f"last byte {max(0, now - receiver.last_byte_at):.1f}s ago"
+    byte_age = (f"last rx {max(0, now - receiver.last_byte_at):.1f}s ago"
                 if receiver.last_byte_at is not None else "no data yet")
-    details += (f"\nUART {receiver.bytes_received:,} bytes | {byte_age} | "
-                f"received {receiver.frame_count} frames | errors {receiver.parser.errors + decode_errors}")
+    details += f"\nUART | {byte_age}"
     if receiver.error or decode_error:
         details += "\n" + (receiver.error or decode_error)
     elif receiver.done.is_set():
@@ -290,11 +289,10 @@ def show_images(receiver, source):
     last_frame = None
     last_size = None
     photo = None
-    decode_errors = 0
     decode_error = None
 
     def refresh():
-        nonlocal original, last_frame, last_size, photo, decode_errors, decode_error
+        nonlocal original, last_frame, last_size, photo, decode_error
         try:
             frame = receiver.latest.get_nowait()
         except queue.Empty:
@@ -309,7 +307,6 @@ def show_images(receiver, source):
                 last_size = None
                 decode_error = None
             except (OSError, ValueError) as error:
-                decode_errors += 1
                 decode_error = f"JPEG decode error: {error}"
         size = (max(1, canvas.winfo_width()), max(1, canvas.winfo_height()))
         if original is not None and size != last_size:
@@ -319,8 +316,7 @@ def show_images(receiver, source):
             canvas.delete("all")
             canvas.create_image(size[0] // 2, size[1] // 2, image=photo)
             last_size = size
-        details = receiver_status(receiver, last_frame, decode_errors=decode_errors,
-                                  decode_error=decode_error)
+        details = receiver_status(receiver, last_frame, decode_error=decode_error)
         status.set(f"{source}\n{details}")
         if receiver.done.is_set() and receiver.count is not None and not receiver.error:
             root.after(100, root.destroy)

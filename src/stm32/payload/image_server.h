@@ -6,7 +6,8 @@
 
 #define IMAGE_TRANSFER_TIMEOUT_MS 3000U
 
-/* Called only from the main loop, between capture/SD-save operations. */
+/* Serve the saved JPEG directly from its retained RAM buffer. Called only
+ * from the main loop, between capture/SD-save operations; no filesystem I/O. */
 void image_server_init(uint8_t response[IMAGE_SPI_FRAME_SIZE]);
 /* Returns one for a response, zero for an ignored NOP or invalid frame.
  * The first NOP after expiry publishes STALE instead of the old success. */

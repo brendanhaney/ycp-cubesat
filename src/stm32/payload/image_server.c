@@ -3,13 +3,11 @@
 #include <string.h>
 
 #include "app.h"
-#include "ff.h"
 #include "image_protocol.h"
 #include "stm32n6xx_hal.h"
 
-static FIL snapshot_file;
 static payload_saved_image_t snapshot;
-static int snapshot_open;
+static int snapshot_active;
 static uint8_t cached_response[IMAGE_SPI_FRAME_SIZE];
 static uint8_t cached_request[IMAGE_SPI_FRAME_SIZE];
 static int cached_valid;
@@ -52,35 +50,47 @@ static void expire_handoff_waits(void) {
     debug_image_capture_wait = (awaiting_info ? 1U : 0U) | (awaiting_reply ? 2U : 0U);
 }
 
-static int close_snapshot(void) {
-    int result = 0;
-    if (snapshot_open) {
-        result = f_close(&snapshot_file) != FR_OK;
-        snapshot_open = 0;
-    }
+static void clear_snapshot(void) {
+    snapshot_active = 0;
     memset(&snapshot, 0, sizeof(snapshot));
     cached_valid = 0;
     debug_image_transfer_active = 0;
-    return result;
+}
+
+static void invalidate_snapshot(void) {
+    expired_response_pending = cached_valid && cached_response[5] == IMAGE_STATUS_OK &&
+        (cached_request[4] == IMAGE_OP_INFO || cached_request[4] == IMAGE_OP_READ);
+    clear_snapshot();
+    if (expired_response_pending) {
+        cached_response[5] = IMAGE_STATUS_STALE;
+        image_put_u16(cached_response + 6, 0);
+        image_frame_seal(cached_response);
+    }
 }
 
 int image_server_transfer_active(void) {
-    if (snapshot_open &&
+    payload_saved_image_t latest;
+    const int available = payload_get_latest_saved_image(&latest) && latest.data != NULL;
+    const int cached_image = cached_valid && cached_response[5] == IMAGE_STATUS_OK &&
+        (cached_request[4] == IMAGE_OP_INFO || cached_request[4] == IMAGE_OP_READ);
+
+    /* The camera reuses this RAM buffer. Validate before replaying a cached
+     * reply too, in case a direct capture API call bypassed the main lease. */
+    if ((snapshot_active && (!available || latest.data != snapshot.data ||
+             latest.image_id != snapshot.image_id || latest.length != snapshot.length ||
+             latest.crc32 != snapshot.crc32)) ||
+        (cached_image && (!available ||
+             latest.image_id != image_get_u32(cached_response + 12) ||
+             latest.length != image_get_u32(cached_response + 20) ||
+             latest.crc32 != image_get_u32(cached_response + 24))))
+        invalidate_snapshot();
+
+    if (snapshot_active &&
         (uint32_t)(HAL_GetTick() - last_activity) >= IMAGE_TRANSFER_TIMEOUT_MS) {
-        /* Invalidate successful INFO/READ replies as well as the open file.
-         * A late READ retry must not revive a completed or abandoned lease. */
-        expired_response_pending = cached_valid && cached_response[5] == IMAGE_STATUS_OK &&
-            (cached_request[4] == IMAGE_OP_INFO || cached_request[4] == IMAGE_OP_READ);
-        if (close_snapshot())
-            debug_image_errors++;
-        if (expired_response_pending) {
-            cached_response[5] = IMAGE_STATUS_STALE;
-            image_put_u16(cached_response + 6, 0);
-            image_frame_seal(cached_response);
-        }
+        invalidate_snapshot();
         debug_image_timeouts++;
     }
-    return snapshot_open;
+    return snapshot_active;
 }
 
 int image_server_capture_ready(void) {
@@ -90,7 +100,7 @@ int image_server_capture_ready(void) {
 }
 
 void image_server_init(uint8_t response[IMAGE_SPI_FRAME_SIZE]) {
-    close_snapshot();
+    clear_snapshot();
     cached_valid = 0;
     expired_response_pending = 0;
     observed_image_id = 0;
@@ -135,9 +145,9 @@ int image_server_handle(const uint8_t request[IMAGE_SPI_FRAME_SIZE],
 
     expired_response_pending = 0;
 
-    /* Retries must keep the same file even when a newer capture has finished. */
+    /* Retries keep the same validated RAM image and do not repeat its work. */
     if (cached_valid && memcmp(request, cached_request, IMAGE_SPI_FRAME_SIZE) == 0) {
-        if (snapshot_open && cached_response[5] == IMAGE_STATUS_OK &&
+        if (snapshot_active && cached_response[5] == IMAGE_STATUS_OK &&
             (command == IMAGE_OP_INFO || command == IMAGE_OP_READ) &&
             image_get_u32(cached_response + 12) == snapshot.image_id)
             last_activity = HAL_GetTick();
@@ -155,9 +165,8 @@ int image_server_handle(const uint8_t request[IMAGE_SPI_FRAME_SIZE],
     } else if (command == IMAGE_OP_INFO) {
         payload_saved_image_t latest;
         debug_image_info_requests++;
-        if (close_snapshot()) {
-            status = IMAGE_STATUS_IO_ERROR;
-        } else if (!payload_get_latest_saved_image(&latest)) {
+        clear_snapshot();
+        if (!payload_get_latest_saved_image(&latest) || latest.data == NULL) {
             status = IMAGE_STATUS_NO_IMAGE;
         } else {
             awaiting_info = 0;
@@ -167,44 +176,30 @@ int image_server_handle(const uint8_t request[IMAGE_SPI_FRAME_SIZE],
             /* INFO's image_id is the master's last completed image. Polling
              * that same image must leave the camera free to produce another. */
             if (image_id != latest.image_id) {
-                if (f_open(&snapshot_file, latest.filename, FA_READ) != FR_OK) {
-                    status = IMAGE_STATUS_IO_ERROR;
-                } else {
-                    snapshot_open = 1;
-                    if (f_size(&snapshot_file) != latest.length)
-                        status = IMAGE_STATUS_IO_ERROR;
-                    else
-                        snapshot = latest;
-                }
+                snapshot = latest;
+                snapshot_active = 1;
             } else {
                 awaiting_reply = 1;
                 reply_started = HAL_GetTick();
             }
         }
     } else if (command == IMAGE_OP_READ) {
-        if (!snapshot_open || image_id != snapshot.image_id) {
+        if (!snapshot_active || image_id != snapshot.image_id) {
             status = IMAGE_STATUS_STALE;
         } else if (offset >= snapshot.length) {
             status = IMAGE_STATUS_BAD_REQUEST;
         } else {
-            UINT received = 0;
             const uint32_t remaining = snapshot.length - offset;
             length = remaining < IMAGE_SPI_DATA_SIZE ? remaining : IMAGE_SPI_DATA_SIZE;
-            if (f_lseek(&snapshot_file, offset) != FR_OK ||
-                f_read(&snapshot_file, response + IMAGE_SPI_DATA_OFFSET, length, &received) != FR_OK ||
-                received != length) {
-                status = IMAGE_STATUS_IO_ERROR;
-                length = 0;
-            } else {
-                debug_image_chunks++;
-                debug_image_bytes += length;
-            }
+            memcpy(response + IMAGE_SPI_DATA_OFFSET, snapshot.data + offset, length);
+            debug_image_chunks++;
+            debug_image_bytes += length;
         }
     } else if (command == IMAGE_OP_RELEASE) {
-        if (snapshot_open && image_id && image_id != snapshot.image_id)
+        if (snapshot_active && image_id && image_id != snapshot.image_id)
             status = IMAGE_STATUS_STALE;
-        else if (close_snapshot())
-            status = IMAGE_STATUS_IO_ERROR;
+        else
+            clear_snapshot();
         if (status == IMAGE_STATUS_OK) {
             awaiting_reply = 1;
             reply_started = HAL_GetTick();
@@ -214,15 +209,15 @@ int image_server_handle(const uint8_t request[IMAGE_SPI_FRAME_SIZE],
     }
 
     if (status != IMAGE_STATUS_OK) {
-        close_snapshot();
+        clear_snapshot();
         debug_image_errors++;
-    } else if (snapshot_open && (command == IMAGE_OP_INFO || command == IMAGE_OP_READ)) {
+    } else if (snapshot_active && (command == IMAGE_OP_INFO || command == IMAGE_OP_READ)) {
         last_activity = HAL_GetTick();
         debug_image_transfer_active = 1;
     }
     response[5] = status;
     image_put_u16(response + 6, length);
-    if (snapshot_open) {
+    if (snapshot_active) {
         image_put_u32(response + 12, snapshot.image_id);
         image_put_u32(response + 20, snapshot.length);
         image_put_u32(response + 24, snapshot.crc32);

@@ -176,7 +176,7 @@ n6-help:
 	@echo "make payload: build the SRAM executable at $(N6_BUILD)/payload.elf."
 	@echo "make run-payload (or make flash-payload): load, verify and start the payload in SRAM over ST-LINK."
 	@echo "Repeat run-payload after reset or power loss. No signing tool or external loader is needed for SRAM."
-	@echo "make capture-payload: request a capture from the running payload and verify JPEG/SD readback into $(PAYLOAD_CAPTURE_OUTPUT)."
+	@echo "make capture-payload: request a capture, check its SD save, and download the JPEG into $(PAYLOAD_CAPTURE_OUTPUT)."
 	@echo "Set PAYLOAD_CAPTURE_COUNT to repeat captures and PAYLOAD_CAPTURE_TIMEOUT to change the wait limit."
 	@echo "make signed-payload: create $(N6_BUILD)/payload-trusted.bin with STM32CubeProgrammer's signing tool."
 	@echo "make flash-payload-external: program persistent external flash; standalone boot requires BOOT0=0 and BOOT1=0."

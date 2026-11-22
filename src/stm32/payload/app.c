@@ -74,6 +74,7 @@ volatile uint32_t debug_jpeg_sd_done = 0;
 volatile uint32_t debug_jpeg_sd_index = 0;
 volatile uint32_t debug_jpeg_sd_saved_count = 0;
 volatile uint32_t debug_jpeg_sd_no_slot = 0;
+/* Retained for debugger compatibility; full SD readback is disabled. */
 volatile uint32_t debug_jpeg_sd_verify_status = 0xFFFFFFFFU;
 volatile uint32_t debug_jpeg_sd_verified_bytes = 0;
 volatile uint32_t debug_jpeg_sd_verified = 0;
@@ -81,40 +82,6 @@ volatile uint32_t debug_jpeg_sd_verified = 0;
 char debug_jpeg_sd_filename[20];
 
 volatile int32_t debug_capture_status;
-
-static void JPEG_VerifyOnSD(void) {
-    FIL file;
-    uint8_t data[512];
-    UINT bytes_read;
-    uint32_t offset = 0;
-    int matches;
-
-    debug_jpeg_sd_verify_status = f_open(&file, debug_jpeg_sd_filename, FA_READ);
-    if (debug_jpeg_sd_verify_status != FR_OK)
-        return;
-
-    matches = f_size(&file) == debug_jpeg_len;
-    while (matches && offset < debug_jpeg_len) {
-        const UINT remaining = debug_jpeg_len - offset;
-        const UINT count = remaining < sizeof(data) ? remaining : sizeof(data);
-
-        debug_jpeg_sd_verify_status = f_read(&file, data, count, &bytes_read);
-        if (debug_jpeg_sd_verify_status != FR_OK || bytes_read != count) {
-            matches = 0;
-            break;
-        }
-
-        debug_jpeg_sd_verified_bytes += bytes_read;
-        matches = memcmp(data, debug_jpeg_buffer + offset, count) == 0;
-        offset += bytes_read;
-    }
-
-    const FRESULT close_status = f_close(&file);
-    if (debug_jpeg_sd_verify_status == FR_OK)
-        debug_jpeg_sd_verify_status = close_status;
-
-    debug_jpeg_sd_verified = matches && offset == debug_jpeg_len && close_status == FR_OK;
-}
 
 static void JPEG_SaveToSD(void) {
     UINT bytes_written = 0;
@@ -187,14 +154,12 @@ static void JPEG_SaveToSD(void) {
     if (debug_jpeg_sd_write == FR_OK && bytes_written == debug_jpeg_len &&
         debug_jpeg_sd_close == FR_OK) {
         debug_jpeg_sd_saved_count++;
-        JPEG_VerifyOnSD();
-        if (debug_jpeg_sd_verified) {
-            memcpy(latest_saved_image.filename, debug_jpeg_sd_filename,
-                   sizeof(latest_saved_image.filename));
-            latest_saved_image.image_id = debug_jpeg_sd_index;
-            latest_saved_image.length = debug_jpeg_len;
-            latest_saved_image.crc32 = image_crc32(debug_jpeg_buffer, debug_jpeg_len);
-        }
+        memcpy(latest_saved_image.filename, debug_jpeg_sd_filename,
+               sizeof(latest_saved_image.filename));
+        latest_saved_image.image_id = debug_jpeg_sd_index;
+        latest_saved_image.length = debug_jpeg_len;
+        latest_saved_image.crc32 = image_crc32(debug_jpeg_buffer, debug_jpeg_len);
+        latest_saved_image.data = debug_jpeg_buffer;
     }
 
     debug_jpeg_sd_done = 1;
@@ -394,6 +359,10 @@ payload_status_t payload_take_jpeg(payload_image_t *image, uint32_t timeout_ms) 
     debug_jpeg_ready = 0;
     debug_jpeg_len = 0;
 
+    /* The shared JPEG buffer is about to be overwritten. A failed encode or
+     * save must not expose new bytes under the previous saved image's ID. */
+    latest_saved_image = (payload_saved_image_t){0};
+
     const int length = JPG_Encode(debug_jpeg_buffer, capture_buffer[captured], sizeof(debug_jpeg_buffer), MAX_IMG_FRAME_SIZE);
 
     if (length <= 0 || length > (int)sizeof(debug_jpeg_buffer)) {
@@ -424,7 +393,8 @@ payload_status_t payload_save_jpeg(const payload_image_t *image) {
 
     JPEG_SaveToSD();
 
-    if (!debug_jpeg_sd_verified || debug_jpeg_sd_verify_status != FR_OK)
+    if (debug_jpeg_sd_open != FR_OK || debug_jpeg_sd_write != FR_OK ||
+        debug_jpeg_sd_bytes != image->length || debug_jpeg_sd_close != FR_OK)
         return PAYLOAD_STORAGE_ERROR;
 
     return PAYLOAD_OK;

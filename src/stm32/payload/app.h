@@ -41,13 +41,15 @@ typedef struct {
     uint32_t height;
 } payload_image_t;
 
-/* Metadata survives release/reuse of the camera's JPEG buffer. Saved files
- * use distinct names, so a transfer can keep reading an older snapshot. */
+/* The saved JPEG remains in RAM after releasing the raw camera frame.
+ * Its data is valid until the next JPEG encode, which invalidates this
+ * metadata first. The main loop defers that encode during an SPI transfer. */
 typedef struct {
     char filename[20];
     uint32_t image_id;
     uint32_t length;
     uint32_t crc32;
+    const uint8_t *data;
 } payload_saved_image_t;
 
 payload_status_t payload_camera_init(void);
