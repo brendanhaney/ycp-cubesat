@@ -39,7 +39,7 @@ static void observe_latest_image(void) {
 
 static void expire_handoff_waits(void) {
     const uint32_t now = HAL_GetTick();
-    if (awaiting_info && (uint32_t)(now - offer_started) >= IMAGE_TRANSFER_TIMEOUT_MS) {
+    if (awaiting_info && (uint32_t)(now - offer_started) >= IMAGE_OFFER_WINDOW_MS) {
         awaiting_info = 0;
         debug_image_handoff_timeouts++;
     }

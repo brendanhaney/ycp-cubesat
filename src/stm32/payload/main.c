@@ -39,7 +39,6 @@ UART_HandleTypeDef huart1;
 volatile uint32_t debug_spi_requests = 0;
 volatile uint32_t debug_spi_errors = 0;
 static int spi_initialized;
-static uint8_t spi_request[IMAGE_SPI_FRAME_SIZE];
 static uint8_t spi_response[IMAGE_SPI_FRAME_SIZE];
 static volatile uint32_t debug_sram3_readback = 0;
 static volatile uint32_t debug_sram3_pass = 0;
@@ -136,7 +135,7 @@ int main(void) {
         /* Process INFO/READ before deciding whether the next capture can run. */
         service_payload_spi();
 
-        if (!image_server_capture_ready()) {
+        if (!image_server_capture_ready() || payload_spi_busy()) {
             /* Leave debugger capture requests pending too: app_capture_step
              * would consume them even if automatic_capture were false. */
             payload_camera_poll();
@@ -163,26 +162,30 @@ static void service_payload_spi(void) {
     if (!spi_initialized)
         return;
 
-    const int result = payload_spi_service(spi_request);
+    const int result = payload_spi_service(NULL);
 
     if (result < 0) {
 
         debug_spi_errors++;
 
-        payload_spi_service(spi_request);
+        payload_spi_service(NULL);
 
         return;
     }
 
     if (result > 0) {
+        const uint8_t *request;
+        if (!payload_spi_receive_acquire(&request))
+            return;
 
         debug_spi_requests++;
 
-        if (image_server_handle(spi_request, spi_response))
+        if (image_server_handle(request, spi_response))
             payload_spi_set_response(spi_response);
+        payload_spi_receive_release();
 
         /* Preload the next reply before sleeping or starting another capture. */
-        payload_spi_service(spi_request);
+        payload_spi_service(NULL);
     }
 }
 

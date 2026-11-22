@@ -3,45 +3,89 @@
 #include <config.h>
 #include <registers.h>
 #include <payload_spi.h>
+#include <payload_spi_dma.h>
 
 #ifndef PAYLOAD_SPI_POLL_LIMIT
 #define PAYLOAD_SPI_POLL_LIMIT 1000000U
 #endif
 
 #if defined(CUBESAT_STM32H7)
-#define LINK_SPI_BASE 0x40013000U /* SPI1 */
-#define LINK_GPIOA    0x58020000U
-#define LINK_GPIOB    0x58020400U
-#define LINK_GPIOD    0x58020C00U
-#define LINK_CS_PORT  LINK_GPIOD
-#define LINK_CS_MASK  (1U << 14)
+#define LINK_SPI_BASE 0x40013000U
+#define LINK_GPIOA 0x58020000U
+#define LINK_GPIOB 0x58020400U
+#define LINK_GPIOD 0x58020C00U
+#define LINK_CS_PORT LINK_GPIOD
+#define LINK_CS_MASK (1U << 14)
+#define LINK_READY_PORT LINK_GPIOD
+#define LINK_READY_MASK (1U << 15) /* Arduino D9 */
 #else
-#define LINK_SPI_BASE 0x52005000U /* SPI5, secure alias */
-#define LINK_GPIOA    0x56020000U
-#define LINK_GPIOE    0x56021000U
-#define LINK_GPIOG    0x56021800U
-#define LINK_CS_PORT  LINK_GPIOA
-#define LINK_CS_MASK  (1U << 3)
-/* STM32N657xx CMSIS: SPI5_IRQn=157, __NVIC_PRIO_BITS=4. Keep CMSIS out
- * of this raw-register driver to avoid conflicting register definitions. */
-#define LINK_IRQ      157U
-#define LINK_IRQ_BIT  (1U << (LINK_IRQ % 32U))
-#define LINK_IRQ_WORD ((LINK_IRQ / 32U) * 4U)
-#define LINK_IRQ_ENABLE MMIO32(0xE000E100U + LINK_IRQ_WORD)
-#define LINK_IRQ_CLEAR  MMIO32(0xE000E280U + LINK_IRQ_WORD)
+#define LINK_SPI_BASE 0x52005000U
+#define LINK_GPIOA 0x56020000U
+#define LINK_GPIOD 0x56020C00U
+#define LINK_GPIOE 0x56021000U
+#define LINK_GPIOG 0x56021800U
+#define LINK_CS_PORT LINK_GPIOA
+#define LINK_CS_MASK (1U << 3)
+#define LINK_READY_PORT LINK_GPIOD
+#define LINK_READY_MASK (1U << 7) /* Arduino D9, GPIO_EXTI7 */
 #endif
 
 #define LINK_REG(offset) MMIO32(LINK_SPI_BASE + (offset))
-#define LINK_TX MMIO8(LINK_SPI_BASE + 0x20U)
-#define LINK_RX MMIO8(LINK_SPI_BASE + 0x30U)
+#define LINK_DMA_ENABLE ((1U << 14) | (1U << 15))
 
+payload_spi_rx_buffer_t payload_spi_rx_buffer;
+static uint8_t transmit[PAYLOAD_SPI_SIZE] __attribute__((aligned(32)));
 static int initialized;
+static volatile int armed;
 #if defined(CUBESAT_STM32N6)
-static volatile int armed, failed;
-static volatile unsigned int received, transmitted;
-static uint8_t response[PAYLOAD_SPI_SIZE];
-static uint8_t request[PAYLOAD_SPI_SIZE];
+static int selected;
+static uint32_t selected_at;
+extern uint32_t HAL_GetTick(void);
 #endif
+
+static void barrier(void) {
+#if defined(__arm__) || defined(__thumb__)
+    __asm volatile ("dmb sy" ::: "memory");
+#else
+    __asm volatile ("" ::: "memory");
+#endif
+}
+
+int payload_spi_receive_acquire(const uint8_t **frame) {
+#if defined(CUBESAT_STM32N6)
+    if (armed)
+        return 0;
+#endif
+    if (!frame || payload_spi_rx_buffer.status != PAYLOAD_SPI_RX_READY)
+        return 0;
+    barrier();
+    payload_spi_rx_buffer.status = PAYLOAD_SPI_RX_PROCESSING;
+    *frame = payload_spi_rx_buffer.data;
+    return 1;
+}
+
+void payload_spi_receive_release(void) {
+    if (payload_spi_rx_buffer.status == PAYLOAD_SPI_RX_PROCESSING) {
+        barrier();
+        payload_spi_rx_buffer.status = 0;
+    }
+}
+
+int payload_spi_busy(void) {
+#if defined(CUBESAT_STM32N6)
+    return armed && !(GPIO_IDR(LINK_CS_PORT) & LINK_CS_MASK);
+#else
+    return 0;
+#endif
+}
+
+static void copy_received(uint8_t *out) {
+    const uint8_t *frame;
+    if (out && payload_spi_receive_acquire(&frame)) {
+        memcpy(out, frame, PAYLOAD_SPI_SIZE);
+        payload_spi_receive_release();
+    }
+}
 
 static void alternate(uintptr_t port, unsigned int pin, unsigned int pull) {
     const unsigned int shift = pin * 2U;
@@ -56,274 +100,246 @@ static void alternate(uintptr_t port, unsigned int pin, unsigned int pull) {
     GPIO_MODER(port) = (GPIO_MODER(port) & ~(3U << shift)) | (2U << shift);
 }
 
-static void reset_spi(void) {
+static void ready(int high) {
+#if defined(CUBESAT_STM32N6)
+    GPIO_BSRR(LINK_READY_PORT) = high ? LINK_READY_MASK : LINK_READY_MASK << 16;
+#else
+    (void)high;
+#endif
+}
+
+static void stop_link(void) {
+    ready(0);
+    LINK_REG(0x08U) &= ~LINK_DMA_ENABLE;
+    LINK_REG(0x00U) &= ~SPI_CR1_SPE;
+    payload_spi_dma_stop();
+    armed = 0;
+}
+
+void payload_spi_pause(void) {
+    if (initialized) {
+        stop_link();
+        if (payload_spi_rx_buffer.status == PAYLOAD_SPI_RX_RECEIVING)
+            payload_spi_rx_buffer.status = 0;
+    }
+}
+
+void payload_spi_dma_complete(int error) {
+    if (!armed || (payload_spi_rx_buffer.status != PAYLOAD_SPI_RX_RECEIVING &&
+                   !(error && payload_spi_rx_buffer.status == PAYLOAD_SPI_RX_READY)))
+        return;
+    ready(0);
+    barrier();
+    if (error) {
+        payload_spi_rx_buffer.status = PAYLOAD_SPI_RX_ERROR;
+    } else {
+        payload_spi_rx_buffer.sequence++;
+        payload_spi_rx_buffer.status = PAYLOAD_SPI_RX_READY;
+    }
+}
+
+static int prepare(void) {
+    if (payload_spi_rx_buffer.status &
+        (PAYLOAD_SPI_RX_RECEIVING | PAYLOAD_SPI_RX_READY | PAYLOAD_SPI_RX_PROCESSING))
+        return -1;
+    stop_link();
 #if defined(CUBESAT_STM32H7)
     MMIO32(STM32H7_RCC_BASE + 0x98U) |= 1U << 12;
     MMIO32(STM32H7_RCC_BASE + 0x98U) &= ~(1U << 12);
+    const uint32_t prescaler = PAYLOAD_SPI_MASTER_MBR;
 #else
     STM32N6_RCC_APB2RSTSR = 1U << 20;
     STM32N6_RCC_APB2RSTCR = 1U << 20;
-#endif
-}
-
-#if defined(CUBESAT_STM32H7)
-static int wait_status(uint32_t flag) {
-    uint32_t remaining = PAYLOAD_SPI_POLL_LIMIT;
-    do {
-        const uint32_t status = LINK_REG(0x14U);
-        if (status & SPI_SR_ERRORS)
-            return -1;
-        if (status & flag)
-            return 0;
-    } while (--remaining);
-    return -1;
-}
-#endif
-
-static int prepare(const uint8_t *tx) {
-    reset_spi(); // Flush partial frames and errors from an interrupted request.
-#if defined(CUBESAT_STM32H7)
-    // Internal NSS must be inactive before entering master mode, otherwise
-    // mode-fault detection can clear MASTER before the transfer starts.
-    LINK_REG(0x00U) = SPI_CR1_SSI;
-#else
     LINK_REG(0x00U) = 0;
+    const uint32_t prescaler = 5U;
+    LINK_REG(0x0CU) = SPI_CFG2_SSM;
+    selected = 0;
+    selected_at = HAL_GetTick();
 #endif
-    // Change only the master's SPI divider, not CPU or peripheral clocks.
-#if defined(CUBESAT_STM32H7)
-    const uint32_t prescaler = PAYLOAD_SPI_MASTER_MBR;
-#else
-    const uint32_t prescaler = 5U; // Ignored in slave mode; retain its setup.
-#endif
-    // Eight-bit DSIZE/CRCSIZE; H753 ES0392 2.22.5 applies even without CRC.
     LINK_REG(0x08U) = 7U | (7U << 16) | (prescaler << 28);
 #if defined(CUBESAT_STM32H7)
-    LINK_REG(0x0CU) = SPI_CFG2_AFCNTR | SPI_CFG2_MASTER | SPI_CFG2_SSM;
-    LINK_REG(0x04U) = PAYLOAD_SPI_SIZE;
-#else
-    // Physical CS is polled; software NSS selects the slave peripheral.
+    /* Set internal NSS before master mode. Keep AF outputs released until
+     * MASTER is set, so an armed slave sees no stray clock transitions. */
     LINK_REG(0x0CU) = SPI_CFG2_SSM;
-    LINK_REG(0x04U) = 0; // IRQ counts bytes; no EOT or suspend between bytes.
+    LINK_REG(0x00U) = SPI_CR1_SSI;
+    LINK_REG(0x0CU) = SPI_CFG2_AFCNTR | SPI_CFG2_MASTER | SPI_CFG2_SSM;
 #endif
+    LINK_REG(0x04U) = PAYLOAD_SPI_SIZE;
+    LINK_REG(0x10U) = 0;
     LINK_REG(0x18U) = 0xFF8U;
+    payload_spi_rx_buffer.status = PAYLOAD_SPI_RX_RECEIVING;
+    armed = 1;
+    if (payload_spi_dma_start(transmit, payload_spi_rx_buffer.data, PAYLOAD_SPI_SIZE))
+        goto failed;
+    LINK_REG(0x08U) |= LINK_DMA_ENABLE;
+#if defined(CUBESAT_STM32H7)
+    LINK_REG(0x00U) = SPI_CR1_SSI | SPI_CR1_SPE;
+#else
     LINK_REG(0x00U) |= SPI_CR1_SPE;
-    // Eight bytes fit both peripherals. Never wait while arming the slave.
-    for (unsigned int i = 0; i < 8U; i++) {
-        const uint32_t status = LINK_REG(0x14U);
-        if ((status & SPI_SR_ERRORS) || !(status & SPI_SR_TXP))
-            return -1;
-        LINK_TX = tx[i];
+#endif
+    /* Let DMA put the first bytes in TX FIFO before exposing READY/SCK. */
+    uint32_t remaining = PAYLOAD_SPI_POLL_LIMIT;
+    while (LINK_REG(0x14U) & SPI_SR_TXP) {
+        if (payload_spi_dma_status() < 0 || !--remaining)
+            goto failed;
     }
+    if (payload_spi_rx_buffer.status != PAYLOAD_SPI_RX_RECEIVING ||
+        payload_spi_dma_status() < 0)
+        goto failed;
     return 0;
+failed:
+    stop_link();
+    payload_spi_rx_buffer.status = PAYLOAD_SPI_RX_ERROR;
+    return -1;
 }
 
 int payload_spi_init(void) {
     uint32_t remaining = PAYLOAD_SPI_POLL_LIMIT;
-    initialized = 0;
-#if defined(CUBESAT_STM32N6)
-    armed = failed = 0;
-    received = transmitted = 0;
-    memset(response, 0, sizeof(response));
-#endif
+    initialized = armed = 0;
+    memset(&payload_spi_rx_buffer, 0, sizeof(payload_spi_rx_buffer));
+    memset(transmit, 0, sizeof(transmit));
 #if defined(CUBESAT_STM32H7)
     STM32H7_RCC_CR |= 1U;
-    while (!(STM32H7_RCC_CR & (1U << 2))) {
-        if (!--remaining)
-            return -1;
-    }
-    // SPI123SEL = per_ck; CKPERSEL = HSI. Do not change the CPU clock.
+    while (!(STM32H7_RCC_CR & (1U << 2)))
+        if (!--remaining) return -1;
     MMIO32(STM32H7_RCC_BASE + 0x4CU) &= ~(3U << 28);
     STM32H7_RCC_D2CCIP1R = (STM32H7_RCC_D2CCIP1R & ~(7U << 12)) | (4U << 12);
     STM32H7_RCC_AHB4ENR |= (1U << 0) | (1U << 1) | (1U << 3);
     STM32H7_RCC_APB2ENR |= 1U << 12;
-    (void)STM32H7_RCC_AHB4ENR;
     (void)STM32H7_RCC_APB2ENR;
     GPIO_BSRR(LINK_GPIOD) = LINK_CS_MASK;
     GPIO_OTYPER(LINK_GPIOD) &= ~LINK_CS_MASK;
+    GPIO_MODER(LINK_GPIOD) = (GPIO_MODER(LINK_GPIOD) & ~(15U << 28)) | (1U << 28);
     GPIO_PUPDR(LINK_GPIOD) &= ~(3U << 28);
-    GPIO_OSPEEDR(LINK_GPIOD) = (GPIO_OSPEEDR(LINK_GPIOD) & ~(3U << 28)) | (1U << 28);
-    GPIO_MODER(LINK_GPIOD) = (GPIO_MODER(LINK_GPIOD) & ~(3U << 28)) | (1U << 28);
-    alternate(LINK_GPIOA, 5U, 0U); // D13 SCK
-    alternate(LINK_GPIOA, 6U, 2U); // D12 MISO; absent/busy slave reads zero.
-    alternate(LINK_GPIOB, 5U, 0U); // D11 MOSI
+    GPIO_PUPDR(LINK_GPIOD) = (GPIO_PUPDR(LINK_GPIOD) & ~(3U << 30)) | (2U << 30);
+    alternate(LINK_GPIOA, 5U, 2U); // Hold SCK low during peripheral reset.
+    alternate(LINK_GPIOA, 6U, 2U);
+    alternate(LINK_GPIOB, 5U, 0U);
 #else
     STM32N6_RCC_CR |= 1U << 3;
-    while (!(STM32N6_RCC_SR & (1U << 3))) {
-        if (!--remaining)
-            return -1;
-    }
+    while (!(STM32N6_RCC_SR & (1U << 3)))
+        if (!--remaining) return -1;
     STM32N6_RCC_BUSENSR = (1U << 6) | (1U << 9);
-    (void)STM32N6_RCC_BUSENR;
-    STM32N6_RCC_AHB4ENSR = (1U << 18) | (1U << 0) | (1U << 4) | (1U << 6);
+    STM32N6_RCC_AHB4ENSR = (1U << 18) | (1U << 0) | (1U << 3) | (1U << 4) | (1U << 6);
     (void)STM32N6_RCC_AHB4ENR;
     STM32N6_PWR_SVMCR3 &= ~(1U << 24);
-    STM32N6_RCC_CCIPR9 &= ~(7U << 20); // SPI5 kernel clock = PCLK2.
+    STM32N6_RCC_CCIPR9 &= ~(7U << 20);
     STM32N6_RCC_APB2ENSR = 1U << 20;
     (void)STM32N6_RCC_APB2ENR;
-    GPIO_MODER(LINK_GPIOA) &= ~(3U << 6); // D10: GPIO input, software NSS.
+    GPIO_MODER(LINK_GPIOA) &= ~(3U << 6);
     GPIO_PUPDR(LINK_GPIOA) = (GPIO_PUPDR(LINK_GPIOA) & ~(3U << 6)) | (1U << 6);
-    alternate(LINK_GPIOG, 2U, 0U);  // D11 MOSI
-    alternate(LINK_GPIOG, 1U, 0U);  // D12 MISO
-    alternate(LINK_GPIOE, 15U, 0U); // D13 SCK
-    LINK_IRQ_CLEAR = LINK_IRQ_BIT;
-    MMIO8(0xE000E400U + LINK_IRQ) = 5U << 4; // Above camera IRQ priority 6.
-    LINK_IRQ_ENABLE = LINK_IRQ_BIT;
+    ready(0);
+    GPIO_MODER(LINK_GPIOD) = (GPIO_MODER(LINK_GPIOD) & ~(3U << 14)) | (1U << 14);
+    GPIO_OTYPER(LINK_GPIOD) &= ~LINK_READY_MASK;
+    GPIO_PUPDR(LINK_GPIOD) &= ~(3U << 14);
+    alternate(LINK_GPIOG, 2U, 0U);
+    alternate(LINK_GPIOG, 1U, 0U);
+    alternate(LINK_GPIOE, 15U, 0U);
 #endif
-    reset_spi();
-    LINK_REG(0x00U) = 0;
-    LINK_REG(0x10U) = 0;
+    if (payload_spi_dma_init())
+        return -1;
     initialized = 1;
     return 0;
 }
 
-int payload_spi_exchange(const uint8_t tx[PAYLOAD_SPI_SIZE],
-                         uint8_t rx[PAYLOAD_SPI_SIZE]) {
+int payload_spi_exchange(const uint8_t tx[PAYLOAD_SPI_SIZE], uint8_t rx[PAYLOAD_SPI_SIZE]) {
 #if defined(CUBESAT_STM32H7)
-    int result = -1;
-    if (!initialized || !tx || !rx)
+    if (!initialized || !tx)
         return -1;
-    if (prepare(tx))
-        goto done;
-    unsigned int sent = 8U, received_bytes = 0;
     uint32_t remaining = PAYLOAD_SPI_POLL_LIMIT;
+    while (!(GPIO_IDR(LINK_READY_PORT) & LINK_READY_MASK))
+        if (!--remaining) return -1;
+    memcpy(transmit, tx, PAYLOAD_SPI_SIZE);
+    if (prepare())
+        return -1;
+    /* Capture may withdraw the offer while the master's DMA is arming. */
+    if (!(GPIO_IDR(LINK_READY_PORT) & LINK_READY_MASK)) {
+        stop_link();
+        payload_spi_rx_buffer.status = 0;
+        return -1;
+    }
+    int result = -1;
     GPIO_BSRR(LINK_CS_PORT) = LINK_CS_MASK << 16;
     LINK_REG(0x00U) |= SPI_CR1_CSTART;
-    while (received_bytes < PAYLOAD_SPI_SIZE) {
-        const uint32_t status = LINK_REG(0x14U);
-        if (status & SPI_SR_ERRORS)
+    remaining = PAYLOAD_SPI_POLL_LIMIT;
+    int status;
+    do {
+        status = payload_spi_dma_status();
+        if ((LINK_REG(0x14U) & SPI_SR_ERRORS) || !--remaining)
             goto done;
-        int progress = 0;
-        // Drain and refill together so neither FIFO waits for the whole frame.
-        if (status & SPI_SR_RXP) {
-            rx[received_bytes++] = LINK_RX;
-            progress = 1;
-        }
-        if ((status & SPI_SR_TXP) && sent < PAYLOAD_SPI_SIZE) {
-            LINK_TX = tx[sent++];
-            progress = 1;
-        }
-        if (progress)
-            remaining = PAYLOAD_SPI_POLL_LIMIT;
-        else if (!--remaining)
-            goto done;
-    }
-    result = wait_status(SPI_SR_EOT);
-    if (!result) {
-        // EOT can precede the final falling SCK edge (ES0392 2.22.6).
-        remaining = PAYLOAD_SPI_POLL_LIMIT;
-        while (GPIO_IDR(LINK_GPIOA) & (1U << 5)) {
-            if (!--remaining) {
-                result = -1;
-                break;
-            }
-        }
-    }
+    } while (!status);
+    if (status < 0)
+        goto done;
+    remaining = PAYLOAD_SPI_POLL_LIMIT;
+    while (!(LINK_REG(0x14U) & SPI_SR_EOT) ||
+           (GPIO_IDR(LINK_GPIOA) & (1U << 5)) ||
+           (GPIO_IDR(LINK_READY_PORT) & LINK_READY_MASK))
+        if ((LINK_REG(0x14U) & SPI_SR_ERRORS) || !--remaining) goto done;
+    payload_spi_dma_complete(0);
+    result = 0;
 done:
     GPIO_BSRR(LINK_CS_PORT) = LINK_CS_MASK;
-    LINK_REG(0x00U) &= ~SPI_CR1_SPE;
+    stop_link();
+    if (result)
+        payload_spi_rx_buffer.status = PAYLOAD_SPI_RX_ERROR;
+    else
+        copy_received(rx);
     return result;
 #else
-    (void)tx;
-    (void)rx;
+    (void)tx; (void)rx;
     return -1;
-#endif
-}
-
-void payload_spi_pause(void) {
-#if defined(CUBESAT_STM32N6)
-    if (initialized) {
-        LINK_REG(0x10U) = 0; // Stop the source before clearing a pending IRQ.
-        LINK_IRQ_CLEAR = LINK_IRQ_BIT;
-        LINK_REG(0x00U) &= ~SPI_CR1_SPE;
-    }
-    armed = failed = 0;
-    received = transmitted = 0;
 #endif
 }
 
 void payload_spi_set_response(const uint8_t next[PAYLOAD_SPI_SIZE]) {
 #if defined(CUBESAT_STM32N6)
     if (!armed && next)
-        memcpy(response, next, sizeof(response));
+        memcpy(transmit, next, PAYLOAD_SPI_SIZE);
 #else
     (void)next;
 #endif
 }
 
-#if defined(CUBESAT_STM32N6)
-void SPI5_IRQHandler(void) {
-    if (!armed)
-        return;
-    // Each iteration consumes available work. This never waits for clocks.
-    for (;;) {
-        const uint32_t status = LINK_REG(0x14U);
-        if (status & SPI_SR_ERRORS) {
-            failed = 1;
-            LINK_REG(0x10U) = 0;
-            LINK_REG(0x00U) &= ~SPI_CR1_SPE;
-            return;
-        }
-        int progress = 0;
-        if (status & SPI_SR_RXP) {
-            const uint8_t value = LINK_RX;
-            if (received >= PAYLOAD_SPI_SIZE) {
-                failed = 1;
-                LINK_REG(0x10U) = 0;
-                LINK_REG(0x00U) &= ~SPI_CR1_SPE;
-                return;
-            }
-            request[received++] = value;
-            progress = 1;
-        }
-        if ((status & SPI_SR_TXP) && transmitted < PAYLOAD_SPI_SIZE) {
-            LINK_TX = response[transmitted++];
-            progress = 1;
-        }
-        if (transmitted == PAYLOAD_SPI_SIZE)
-            LINK_REG(0x10U) &= ~SPI_SR_TXP; // TXPIE is also bit 1.
-        if (!progress)
-            return;
-    }
-}
-#endif
-
 int payload_spi_service(uint8_t out[PAYLOAD_SPI_SIZE]) {
 #if defined(CUBESAT_STM32N6)
-    if (!initialized || !out)
+    if (!initialized)
         return -1;
     if (!armed) {
-        // Skip an in-progress frame, then preload before the next selection.
-        if (!(GPIO_IDR(LINK_CS_PORT) & LINK_CS_MASK))
+        if (payload_spi_rx_buffer.status == PAYLOAD_SPI_RX_READY) {
+            copy_received(out);
+            return 1;
+        }
+        if (!(GPIO_IDR(LINK_CS_PORT) & LINK_CS_MASK) ||
+            payload_spi_rx_buffer.status == PAYLOAD_SPI_RX_PROCESSING)
             return 0;
-        if (prepare(response)) {
-            payload_spi_pause();
+        if (prepare())
+            return -1;
+        ready(1);
+        return 0;
+    }
+    const int status = payload_spi_dma_status();
+    if (LINK_REG(0x14U) & SPI_SR_ERRORS)
+        payload_spi_dma_complete(1);
+    if (!(GPIO_IDR(LINK_CS_PORT) & LINK_CS_MASK)) {
+        if (!selected)
+            selected_at = HAL_GetTick();
+        selected = 1;
+        if ((uint32_t)(HAL_GetTick() - selected_at) >= 3000U) {
+            stop_link();
+            payload_spi_rx_buffer.status = PAYLOAD_SPI_RX_ERROR;
             return -1;
         }
-        received = 0;
-        transmitted = 8U;
-        failed = 0;
-        armed = 1;
-        LINK_REG(0x10U) = SPI_SR_RXP | SPI_SR_TXP | SPI_SR_ERRORS;
         return 0;
     }
-    if (failed) {
-        payload_spi_pause();
+    if (!status && !selected && payload_spi_rx_buffer.status != PAYLOAD_SPI_RX_ERROR)
+        return 0;
+    stop_link();
+    if (status != 1 || payload_spi_rx_buffer.status != PAYLOAD_SPI_RX_READY) {
+        payload_spi_rx_buffer.status = PAYLOAD_SPI_RX_ERROR;
         return -1;
     }
-    if (!(GPIO_IDR(LINK_CS_PORT) & LINK_CS_MASK))
-        return 0;
-    // No clocks remain after CS rises. Quiesce IRQ delivery before draining
-    // any last FIFO bytes and reading the completed frame in the main loop.
-    if (!received && !(LINK_REG(0x14U) & SPI_SR_RXP))
-        return 0;
-    LINK_REG(0x10U) = 0;
-    LINK_IRQ_CLEAR = LINK_IRQ_BIT;
-    SPI5_IRQHandler();
-    const int valid = !failed && received == PAYLOAD_SPI_SIZE;
-    if (valid)
-        memcpy(out, request, PAYLOAD_SPI_SIZE);
-    payload_spi_pause();
-    return valid ? 1 : -1;
+    copy_received(out);
+    return 1;
 #else
     (void)out;
     return -1;

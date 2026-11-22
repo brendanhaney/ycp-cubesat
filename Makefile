@@ -20,6 +20,7 @@ RESC_DIR = ./venv
 FIRMWARE_CFLAGS = $(filter-out -mcpu=% -march=% -mfpu=% -mfloat-abi=% -mcmse -mno-cmse -mthumb -marm,$(CFLAGS))
 stm32h7_FLAGS = -mcpu=cortex-m7 -mthumb -mfloat-abi=soft -DCUBESAT_STM32H7
 COMMON_SOURCES = src/drivers/uart.c src/drivers/spi.c src/drivers/payload_spi.c \
+                 src/drivers/payload_spi_dma_h7.c \
                  $(wildcard src/utils/*.c) src/drivers/startup.c
 stm32h7_SOURCES = src/drivers/i2c.c src/drivers/tmp117.c src/drivers/ms5611.c \
                   src/drivers/bmi270.c src/drivers/bosch/bmi2.c src/drivers/bosch/bmi270.c \

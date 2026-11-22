@@ -37,6 +37,7 @@
 #endif
 
 #define CAPT_BUFFER_NB 2
+#define MAX_SAVED_IMAGE_NUM 99999U
 
 static uint8_t capture_buffer[CAPT_BUFFER_NB][MAX_IMG_FRAME_SIZE] ALIGN_32 IN_CAPTURE_RAM;
 static uint8_t debug_jpeg_buffer[MAX_IMG_FRAME_SIZE] ALIGN_32
@@ -108,8 +109,10 @@ static void JPEG_SaveToSD(void) {
 
     /* Scan existing names once per boot, then continue from the next number.
      * CREATE_NEW still protects files added by another writer. Never wrap. */
-    for (image_num = next_image_num; image_num <= 999; image_num++) {
-        snprintf(debug_jpeg_sd_filename, sizeof(debug_jpeg_sd_filename), "0:/IMAGE%03lu.JPG",
+    for (image_num = next_image_num; image_num <= MAX_SAVED_IMAGE_NUM; image_num++) {
+        /* Preserve existing names, then keep the wider counter within 8.3. */
+        const char *format = image_num <= 999 ? "0:/IMAGE%03lu.JPG" : "0:/IMG%05lu.JPG";
+        snprintf(debug_jpeg_sd_filename, sizeof(debug_jpeg_sd_filename), format,
                  (unsigned long)image_num);
 
         result = f_open(&debug_jpeg_file, debug_jpeg_sd_filename, FA_CREATE_NEW | FA_WRITE);
@@ -133,8 +136,8 @@ static void JPEG_SaveToSD(void) {
         break;
     }
 
-    /* All 999 filenames are occupied */
-    if (image_num > 999) {
+    /* Every supported filename is occupied. */
+    if (image_num > MAX_SAVED_IMAGE_NUM) {
         debug_jpeg_sd_no_slot = 1;
         debug_jpeg_sd_open = FR_EXIST;
         debug_jpeg_sd_done = 1;
