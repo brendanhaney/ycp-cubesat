@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <image_protocol.h>
 
-/* Fixed-size mode-0 transfers on D10..D13; D9 is slave READY. */
+/* Fixed-size mode-0 transfers on D11..D13 with separate slave selects. */
 #define PAYLOAD_SPI_SIZE IMAGE_SPI_FRAME_SIZE
 
 enum payload_spi_rx_status {
@@ -25,7 +25,7 @@ extern payload_spi_rx_buffer_t payload_spi_rx_buffer;
 /* Claim a complete frame; release it after the application handles it. */
 int payload_spi_receive_acquire(const uint8_t **frame);
 void payload_spi_receive_release(void);
-/* True while the N6 is completing an already selected SPI frame. */
+/* True while a slave is completing an already selected SPI frame. */
 int payload_spi_busy(void);
 
 /* H753 SPI1 prescaler encoding: 5 = 1 MHz, 4 = 2 MHz, 3 = 4 MHz
@@ -38,18 +38,31 @@ int payload_spi_busy(void);
 #endif
 #define PAYLOAD_SPI_MASTER_CLOCK_HZ (64000000U / (2U << PAYLOAD_SPI_MASTER_MBR))
 
-/* H753: SPI1 master. N657: SPI5 slave. */
+enum payload_spi_target {
+    PAYLOAD_SPI_TARGET_PAYLOAD,
+    PAYLOAD_SPI_TARGET_AVIONICS,
+};
+
+/* Radio: SPI1 master. Avionics: SPI1 slave. Payload: SPI5 slave. */
 int payload_spi_init(void);
-/* H753 only: clocks one complete frame; returns 0 or -1 on failure.
+/* Radio only: read the READY wire immediately. Payload advertises availability;
+ * avionics asserts READY only after its software chip select is driven low. */
+int payload_spi_target_ready(enum payload_spi_target target);
+/* Avionics selection waits for arming and for MISO release after CS rises.
+ * Failed selections are cleaned up before either slave can be selected again. */
+int payload_spi_exchange_target(enum payload_spi_target target,
+                                const uint8_t tx[PAYLOAD_SPI_SIZE],
+                                uint8_t rx[PAYLOAD_SPI_SIZE]);
+/* Radio only: clocks one payload frame; returns 0 or -1 on failure.
  * A null rx leaves the completed frame READY for receive_acquire(). */
 int payload_spi_exchange(const uint8_t tx[PAYLOAD_SPI_SIZE],
                          uint8_t rx[PAYLOAD_SPI_SIZE]);
-/* N657 only: returns 1 for a complete frame after CS rises, 0 if idle,
+/* Slaves: returns 1 for a complete frame after CS rises, 0 if idle,
  * or -1 for a short frame/peripheral error. Never waits for the master. */
 int payload_spi_service(uint8_t request[PAYLOAD_SPI_SIZE]);
-/* N657 only: replace the reply for the next exchange while paused. */
+/* Slaves: replace the reply for the next exchange while paused. */
 void payload_spi_set_response(const uint8_t response[PAYLOAD_SPI_SIZE]);
-/* N657 only: discard partial work before camera capture or SD access. */
+/* Slaves: discard partial work before camera capture or sensor access. */
 void payload_spi_pause(void);
 
 #endif

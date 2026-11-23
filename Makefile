@@ -47,7 +47,8 @@ endef
 $(eval $(call firmware,avionics,stm32h7,$(H7_BUILD)))
 $(eval $(call firmware,radio,stm32h7,$(H7_BUILD)))
 $(foreach module,avionics radio,$(eval $(call firmware,$(module),stm32h7,$(RENODE_BUILD))))
-$(foreach module,avionics radio,$(eval $(call firmware,$(module),stm32h7,$(NUCLEO_BUILD),-DCUBESAT_NUCLEO_H753ZI)))
+$(eval $(call firmware,avionics,stm32h7,$(NUCLEO_BUILD),-DCUBESAT_NUCLEO_H753ZI -DCUBESAT_AVIONICS_SPI_SLAVE))
+$(eval $(call firmware,radio,stm32h7,$(NUCLEO_BUILD),-DCUBESAT_NUCLEO_H753ZI))
 
 .PHONY: all avionics radio payload renode renode-avionics renode-radio renode-payload clean FORCE
 .PHONY: nucleo-avionics nucleo-radio nucleo-payload
@@ -222,6 +223,7 @@ test-payload: payload test-payload-drivers test-payload-launcher test-capture-pa
 test-payload-drivers:
 	python3 -B tests/test_image_protocol.py
 	python3 -B tests/test_payload_spi_link.py
+	python3 -B tests/test_radio_shared_spi.py
 	python3 -B tests/test_camera_conversion.py
 	python3 -B tests/test_payload_storage.py
 
