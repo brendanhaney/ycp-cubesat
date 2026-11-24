@@ -56,6 +56,10 @@
 #ifndef PAYLOAD_JPEG_TIMEOUT_MS
 #define PAYLOAD_JPEG_TIMEOUT_MS 1000U
 #endif
+// Set to 1 on both boards to restore whole-image CRC calculation/validation.
+#ifndef IMAGE_CRC_ENABLED
+#define IMAGE_CRC_ENABLED 0
+#endif
 // Image mirror/flip: 0 normal, 1 vertical flip, 2 mirror, 3 both.
 #ifndef PAYLOAD_CAMERA_MIRROR_FLIP
 #define PAYLOAD_CAMERA_MIRROR_FLIP 0U

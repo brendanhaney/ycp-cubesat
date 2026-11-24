@@ -156,7 +156,11 @@ static void JPEG_SaveToSD(void) {
                sizeof(latest_saved_image.filename));
         latest_saved_image.image_id = debug_jpeg_sd_index;
         latest_saved_image.length = debug_jpeg_len;
+#if IMAGE_CRC_ENABLED
         latest_saved_image.crc32 = image_crc32(debug_jpeg_buffer, debug_jpeg_len);
+#else
+        latest_saved_image.crc32 = 0;
+#endif
         latest_saved_image.data = debug_jpeg_buffer;
     }
 

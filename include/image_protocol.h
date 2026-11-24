@@ -5,6 +5,10 @@
 #include <stdint.h>
 #include <config.h>
 
+#if IMAGE_CRC_ENABLED != 0 && IMAGE_CRC_ENABLED != 1
+#error "IMAGE_CRC_ENABLED must be 0 or 1"
+#endif
+
 /* All multi-byte fields are little endian. SPI replies acknowledge the
  * previous command; NOP polls leave the cached reply intact. */
 #define IMAGE_SPI_FRAME_SIZE 256U
