@@ -23,13 +23,16 @@
 #include "ff.h"
 #include "diskio.h"
 #include "storage.h"
+#include "config.h"
 
 static SD_HandleTypeDef hsd2 = {0};
+#if PAYLOAD_STORAGE_STARTUP_TESTS
 static uint8_t debug_sd_sector0[512];
 static DIR debug_fat_dir;
 static FILINFO debug_fat_entry;
 static FIL debug_fat_file;
 static char debug_fat_file_data[65];
+#endif
 
 char debug_fat_names[8][13] = {0};
 
@@ -37,6 +40,8 @@ volatile uint32_t debug_sd_init_status = 0xFFFFFFFFU;
 volatile uint32_t debug_sd_info_status = 0xFFFFFFFFU;
 volatile uint32_t debug_sd_read_status = 0xFFFFFFFFU;
 volatile uint32_t debug_sd_read_error = 0xFFFFFFFFU;
+/* Legacy names retained for debugger scripts; these report the configured
+ * bus-width operation, which now uses the reliable one-bit mode. */
 volatile uint32_t debug_sd_4bit_status = 0xFFFFFFFFU;
 volatile uint32_t debug_sd_4bit_error = 0xFFFFFFFFU;
 volatile uint32_t debug_fat_open_status = 0xFFFFFFFFU;
@@ -93,7 +98,8 @@ static void SDMMC2_ReadOnlyTest(void) {
     hsd2.Init.ClockPowerSave = SDMMC_CLOCK_POWER_SAVE_DISABLE;
     hsd2.Init.BusWide = SDMMC_BUS_WIDE_1B;
     hsd2.Init.HardwareFlowControl = SDMMC_HARDWARE_FLOW_CONTROL_DISABLE;
-    hsd2.Init.ClockDiv = 16;
+    /* Slow the SD clock for the jumper-wired card's signal integrity. */
+    hsd2.Init.ClockDiv = PAYLOAD_SD_CLOCK_DIV;
 
     debug_sd_init_status = HAL_SD_Init(&hsd2);
     debug_sd_error = hsd2.ErrorCode;
@@ -106,24 +112,31 @@ static void SDMMC2_ReadOnlyTest(void) {
             debug_sd_block_size = info.LogBlockSize;
         }
     }
+#if PAYLOAD_STORAGE_STARTUP_TESTS
     if (debug_sd_info_status == HAL_OK) {
-        debug_sd_read_status = HAL_SD_ReadBlocks(&hsd2, debug_sd_sector0, 8192, 1, 1000);
+        debug_sd_read_status = HAL_SD_ReadBlocks(&hsd2, debug_sd_sector0, 8192, 1, PAYLOAD_SD_IO_TIMEOUT_MS);
 
         debug_sd_read_error = hsd2.ErrorCode;
     }
-
+#endif
     if (debug_sd_info_status == HAL_OK) {
-        // Switch the card and controller to 4-bit mode
+        /* One-bit mode is the default validated with the jumper-wired card. */
+#if PAYLOAD_SD_BUS_WIDTH == 4
         debug_sd_4bit_status = HAL_SD_ConfigWideBusOperation(&hsd2, SDMMC_BUS_WIDE_4B);
+#else
+        debug_sd_4bit_status = HAL_SD_ConfigWideBusOperation(&hsd2, SDMMC_BUS_WIDE_1B);
+#endif
 
         debug_sd_4bit_error = hsd2.ErrorCode;
 
-        // Read sector 0 only if switching succeeded
+#if PAYLOAD_STORAGE_STARTUP_TESTS
+        // Read again only if the bus configuration succeeded.
         if (debug_sd_4bit_status == HAL_OK) {
-            debug_sd_read_status = HAL_SD_ReadBlocks(&hsd2, debug_sd_sector0, 8192, 1, 1000);
+            debug_sd_read_status = HAL_SD_ReadBlocks(&hsd2, debug_sd_sector0, 8192, 1, PAYLOAD_SD_IO_TIMEOUT_MS);
 
             debug_sd_read_error = hsd2.ErrorCode;
         }
+#endif
     }
 }
 
@@ -160,7 +173,7 @@ DRESULT disk_read(BYTE pdrv, BYTE *buff, DWORD sector, UINT count) {
 
     for (UINT i = 0; i < count; i++) {
         HAL_StatusTypeDef result =
-            HAL_SD_ReadBlocks(&hsd2, (uint8_t *)fatfs_sector_buffer, sector + i, 1, 1000);
+            HAL_SD_ReadBlocks(&hsd2, (uint8_t *)fatfs_sector_buffer, sector + i, 1, PAYLOAD_SD_IO_TIMEOUT_MS);
 
         if (result != HAL_OK) {
             debug_fatfs_read_error = hsd2.ErrorCode;
@@ -178,7 +191,7 @@ DRESULT disk_read(BYTE pdrv, BYTE *buff, DWORD sector, UINT count) {
 static DRESULT SDMMC2_WaitReady(void) {
     uint32_t start = HAL_GetTick();
 
-    while ((HAL_GetTick() - start) < 3000U) {
+    while ((HAL_GetTick() - start) < PAYLOAD_SD_READY_TIMEOUT_MS) {
         debug_fatfs_card_state = HAL_SD_GetCardState(&hsd2);
 
         if (debug_fatfs_card_state == HAL_SD_CARD_TRANSFER)
@@ -207,7 +220,7 @@ DRESULT disk_write(BYTE pdrv, const BYTE *buff, DWORD sector, UINT count) {
         memcpy(fatfs_sector_buffer, buff + i * 512U, 512U);
 
         /* Write one sector to the microSD card */
-        if (HAL_SD_WriteBlocks(&hsd2, (const uint8_t *)fatfs_sector_buffer, sector + i, 1, 1000) !=
+        if (HAL_SD_WriteBlocks(&hsd2, (const uint8_t *)fatfs_sector_buffer, sector + i, 1, PAYLOAD_SD_IO_TIMEOUT_MS) !=
             HAL_OK) {
             debug_fatfs_write_error = hsd2.ErrorCode;
             return RES_ERROR;
@@ -254,6 +267,7 @@ static void FatFs_ReadOnlyMountTest(void) {
     debug_fatfs_mount_status = f_mount(&debug_fatfs, "0:", 1);
 }
 
+#if PAYLOAD_STORAGE_STARTUP_TESTS
 static void FatFs_ListRootTest(void) {
     if (debug_fatfs_mount_status != FR_OK)
         return;
@@ -305,7 +319,11 @@ static void FatFs_WriteTest(void) {
     UINT bytes_written = 0;
 
     static const char message[] = "CubeSat STM32N657\r\n"
+#if PAYLOAD_SD_BUS_WIDTH == 4
                                   "SDMMC2 4-bit storage test\r\n";
+#else
+                                  "SDMMC2 1-bit storage test\r\n";
+#endif
 
     /* Create or overwrite our test file */
     debug_fat_write_open = f_open(&file, "0:/CSAT.TXT", FA_CREATE_ALWAYS | FA_WRITE);
@@ -326,10 +344,14 @@ static void FatFs_WriteTest(void) {
     debug_fat_write_done = 1;
 }
 
+#endif
+
 void payload_storage_init(void) {
     SDMMC2_ReadOnlyTest();
     FatFs_ReadOnlyMountTest();
+#if PAYLOAD_STORAGE_STARTUP_TESTS
     FatFs_ListRootTest();
     FatFs_ReadFileTest();
     FatFs_WriteTest();
+#endif
 }

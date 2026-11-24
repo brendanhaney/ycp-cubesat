@@ -21,9 +21,12 @@ import time
 
 if __package__:
     from .listen_uart import choose_port, describe_port, open_port
+    from .firmware_config import config_value
 else:
     from listen_uart import choose_port, describe_port, open_port
+    from firmware_config import config_value
 
+DEFAULT_BAUD = config_value("AVIONICS_UART_BAUD")
 
 NUMBER = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
 TELEMETRY_PATTERNS = {
@@ -304,7 +307,8 @@ def draw_scene(pygame, screen, fonts, motion, telemetry, source, now, error=None
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--port", help="serial device, e.g. /dev/ttyACM0 or COM3")
-    parser.add_argument("--baud", type=int, default=115200, help="baud rate (default: 115200)")
+    parser.add_argument("--baud", type=int, default=DEFAULT_BAUD,
+                        help=f"baud rate (default: {DEFAULT_BAUD})")
     parser.add_argument("--list-ports", action="store_true", help="list serial ports and exit")
     parser.add_argument("--demo", action="store_true", help="preview telemetry and rotation without a connected board")
     parser.add_argument("--sea-level-pressure", type=float, default=DEFAULT_SEA_LEVEL_PRESSURE,

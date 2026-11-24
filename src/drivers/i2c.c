@@ -1,4 +1,4 @@
-#include <config.h>
+#include <sensors.h>
 #include <registers.h>
 
 #include "i2c.h"
@@ -40,7 +40,8 @@ static i2c_status_t configure_i2c2(uint32_t *timing)
      * Analog filtering and synchronization add margin below 100 kHz.
      */
     static const uint32_t timings[] = {
-        0xF0521414U, 0x70521414U, 0x30521414U, 0x10521414U
+        AVIONICS_I2C_TIMING_HSI64, AVIONICS_I2C_TIMING_HSI32,
+        AVIONICS_I2C_TIMING_HSI16, AVIONICS_I2C_TIMING_HSI8
     };
     uint32_t remaining = I2C_POLL_LIMIT;
 

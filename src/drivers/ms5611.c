@@ -1,12 +1,32 @@
+#include <sensors.h>
 #include "ms5611.h"
 #include "../utils/delay.h"
 #include "i2c.h"
 
 #define MS5611_RESET 0x1eu
 #define MS5611_PROM_BASE 0xa0u
-#define MS5611_CONVERT_PRESSURE 0x48u
-#define MS5611_CONVERT_TEMPERATURE 0x58u
 #define MS5611_ADC_READ 0x00u
+
+/* These command bits and conversion waits are prescribed by the sensor;
+ * selecting oversampling changes both, so an ADC is never read too early. */
+#if SENSOR_MS5611_OVERSAMPLING == 256
+#define MS5611_OSR_BITS 0x00u
+#define MS5611_CONVERSION_MS 1u
+#elif SENSOR_MS5611_OVERSAMPLING == 512
+#define MS5611_OSR_BITS 0x02u
+#define MS5611_CONVERSION_MS 2u
+#elif SENSOR_MS5611_OVERSAMPLING == 1024
+#define MS5611_OSR_BITS 0x04u
+#define MS5611_CONVERSION_MS 3u
+#elif SENSOR_MS5611_OVERSAMPLING == 2048
+#define MS5611_OSR_BITS 0x06u
+#define MS5611_CONVERSION_MS 5u
+#else
+#define MS5611_OSR_BITS 0x08u
+#define MS5611_CONVERSION_MS 10u
+#endif
+#define MS5611_CONVERT_PRESSURE (0x40u | MS5611_OSR_BITS)
+#define MS5611_CONVERT_TEMPERATURE (0x50u | MS5611_OSR_BITS)
 
 static int send_command(ms5611_t *sensor, uint8_t command) {
 
@@ -112,7 +132,7 @@ static int read_conversion(ms5611_t *sensor, uint8_t command, uint32_t *value) {
     if (status != I2C_OK)
         return status;
 
-    delay_ms(10);
+    delay_ms(MS5611_CONVERSION_MS);
 
     uint8_t bytes[3];
 

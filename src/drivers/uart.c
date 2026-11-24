@@ -35,7 +35,7 @@ void uart_init(void) {
     USART_CR3 = 0;
     USART_PRESC = 0;
     const uint32_t kernel_hz = 64000000U >> ((STM32H7_RCC_CR >> 3) & 3U);
-    USART_BRR = (kernel_hz + 115200U / 2U) / 115200U;
+    USART_BRR = (kernel_hz + AVIONICS_UART_BAUD / 2U) / AVIONICS_UART_BAUD;
     USART_CR1 = USART_CR1_UE | USART_CR1_TE;
 #else
     USART_CR1 |= USART_CR1_UE | USART_CR1_TE;
@@ -67,8 +67,24 @@ void uart_init(void) {
     USART_CR3 = 0;
     USART_PRESC = 0;
     uint32_t kernel_hz = 64000000U >> ((STM32N6_RCC_HSICFGR >> 7) & 3U);
-    USART_BRR = (kernel_hz + 115200U / 2U) / 115200U;
+    USART_BRR = (kernel_hz + PAYLOAD_UART_BAUD / 2U) / PAYLOAD_UART_BAUD;
     USART_CR1 = USART_CR1_UE | USART_CR1_TE;
+#endif
+}
+
+int uart_set_baud(unsigned int baud) {
+#if defined(CUBESAT_STM32H7) && defined(CUBESAT_NUCLEO_H753ZI)
+    const uint32_t kernel_hz = 64000000U >> ((STM32H7_RCC_CR >> 3) & 3U);
+    if (!baud || baud > kernel_hz / 16U ||
+        (kernel_hz + baud / 2U) / baud > 0xFFFFU)
+        return -1;
+    USART_CR1 &= ~USART_CR1_UE;
+    USART_BRR = (kernel_hz + baud / 2U) / baud;
+    USART_CR1 |= USART_CR1_UE;
+    return 0;
+#else
+    (void)baud;
+    return -1;
 #endif
 }
 
@@ -81,6 +97,12 @@ void uart_write_byte(byte_t b) {
 
 }
 
+
+void uart_write(const void *data, size_t length) {
+    const uint8_t *bytes = data;
+    for (size_t i = 0; i < length; i++)
+        uart_write_byte(bytes[i]);
+}
 
 void uart_write_str(const char *str) {
 

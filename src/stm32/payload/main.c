@@ -25,16 +25,21 @@
 #include <stdio.h>
 #include <string.h>
 #include "stm32n6xx_hal_rif.h"
-#include "FreeRTOS.h"
-#include "task.h"
+#include "app_config.h"
 
 #include "storage.h"
+#include "payload_spi.h"
+#include "image_server.h"
 
 extern uint8_t _sdata;
 extern uint8_t __uncached_bss_start__;
 extern uint8_t __uncached_bss_end__;
 
 UART_HandleTypeDef huart1;
+volatile uint32_t debug_spi_requests = 0;
+volatile uint32_t debug_spi_errors = 0;
+static int spi_initialized;
+static uint8_t spi_response[IMAGE_SPI_FRAME_SIZE];
 static volatile uint32_t debug_sram3_readback = 0;
 static volatile uint32_t debug_sram3_pass = 0;
 
@@ -55,19 +60,13 @@ static volatile uint32_t debug_span56_done = 0;
 static volatile uint32_t debug_span56_pass = 0;
 static volatile uint32_t debug_span56_first_bad = 0xFFFFFFFFU;
 
-static StaticTask_t main_thread;
-static StackType_t main_thread_stack[configMINIMAL_STACK_SIZE];
-
 static void SystemClock_Config(void);
 static void Security_Config();
 static void IAC_Config();
 static void CONSOLE_Config(void);
 static void Setup_Mpu(void);
-static int main_freertos(void);
-static void main_thread_fct(void *arg);
-
-/* This is defined in port.c */
-void vPortSetupTimerInterrupt(void);
+static void board_init(void);
+static void service_payload_spi(void);
 
 /**
  * @brief  Main program
@@ -98,7 +97,114 @@ int main(void) {
     SCB_EnableDCache();
 #endif
 
-    return main_freertos();
+    __enable_irq();
+
+    board_init();
+
+    spi_initialized = payload_spi_init() == 0;
+
+    if (!spi_initialized) {
+
+        debug_spi_errors++;
+
+        printf("Payload SPI init failed\n");
+
+    }
+
+    // Send image to comms over SPI
+    image_server_init(spi_response);
+
+    payload_spi_set_response(spi_response);
+
+    debug_capture_status = payload_camera_init();
+
+    if (debug_capture_status != PAYLOAD_OK) {
+
+        BSP_LED_On(LED_RED);
+
+        while (1) {
+            service_payload_spi();
+            image_server_transfer_active();
+            __WFI();
+        }
+
+    }
+
+#if PAYLOAD_CAPTURE_INTERVAL_MS > 0
+    uint32_t last_capture_started = 0;
+    int capture_attempted = 0;
+#endif
+
+    while (1) {
+
+        /* Process INFO/READ before deciding whether the next capture can run. */
+        service_payload_spi();
+
+        if (!image_server_capture_ready() || payload_spi_busy()) {
+            /* Leave debugger capture requests pending too: app_capture_step
+             * would consume them even if automatic_capture were false. */
+            payload_camera_poll();
+        } else {
+#if PAYLOAD_CAPTURE_INTERVAL_MS > 0
+            const uint32_t now = HAL_GetTick();
+            const int interval_elapsed = !capture_attempted ||
+                (uint32_t)(now - last_capture_started) >= PAYLOAD_CAPTURE_INTERVAL_MS;
+#else
+            const int interval_elapsed = 1;
+#endif
+            const int automatic_capture = interval_elapsed &&
+                !debug_capture_request && !debug_capture_ready;
+            const int capture_requested = automatic_capture || debug_capture_request;
+
+            if (capture_requested) {
+                payload_spi_pause();
+#if PAYLOAD_CAPTURE_INTERVAL_MS > 0
+                last_capture_started = now;
+                capture_attempted = 1;
+#endif
+            }
+
+            app_capture_step(automatic_capture);
+        }
+
+        // SPI requests wait until the complete save finishes.
+        service_payload_spi();
+
+        __WFI();
+
+    }
+}
+
+static void service_payload_spi(void) {
+
+    if (!spi_initialized)
+        return;
+
+    const int result = payload_spi_service(NULL);
+
+    if (result < 0) {
+
+        debug_spi_errors++;
+
+        payload_spi_service(NULL);
+
+        return;
+    }
+
+    if (result > 0) {
+        const uint8_t *request;
+        if (!payload_spi_receive_acquire(&request))
+            return;
+
+        debug_spi_requests++;
+
+        if (image_server_handle(request, spi_response))
+            payload_spi_set_response(spi_response);
+        payload_spi_receive_release();
+
+        /* Preload the next reply before sleeping or starting another capture. */
+        payload_spi_service(NULL);
+    }
 }
 
 static void Setup_MpuRegion(uint8_t number, uint32_t start, uint32_t end) {
@@ -260,7 +366,7 @@ static void CONSOLE_Config() {
     HAL_GPIO_Init(GPIOE, &gpio_init);
 
     huart1.Instance = USART1;
-    huart1.Init.BaudRate = 115200;
+    huart1.Init.BaudRate = PAYLOAD_UART_BAUD;
     huart1.Init.Mode = UART_MODE_TX_RX;
     huart1.Init.Parity = UART_PARITY_NONE;
     huart1.Init.WordLength = UART_WORDLENGTH_8B;
@@ -273,40 +379,12 @@ static void CONSOLE_Config() {
     }
 }
 
-static int main_freertos() {
-    TaskHandle_t hdl;
-
-    hdl = xTaskCreateStatic(main_thread_fct, "main", configMINIMAL_STACK_SIZE, NULL,
-                            tskIDLE_PRIORITY + 1, main_thread_stack, &main_thread);
-    assert(hdl != NULL);
-
-    vTaskStartScheduler();
-    assert(0);
-
-    return -1;
-}
-
-static void main_thread_fct(void *arg) {
-    uint32_t preemptPriority;
-    uint32_t subPriority;
-    IRQn_Type i;
+static void board_init(void) {
     int ret;
 
-    /* Copy SysTick_IRQn priority set by RTOS and use it as default priorities for IRQs. We are now
-     * sure that all irqs have default priority below or equal to
-     * configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY.
-     */
-    HAL_NVIC_GetPriority(SysTick_IRQn, HAL_NVIC_GetPriorityGrouping(), &preemptPriority,
-                         &subPriority);
-    for (i = PVD_PVM_IRQn; i <= LTDC_UP_ERR_IRQn; i++)
-        HAL_NVIC_SetPriority(i, preemptPriority, subPriority);
-
-    /* Call SystemClock_Config() after vTaskStartScheduler() since it call HAL_Delay() which call
-     * vTaskDelay(). Drawback is that we must call vPortSetupTimerInterrupt() since SystemCoreClock
-     * value has been modified by SystemClock_Config()
-     */
+    for (IRQn_Type i = PVD_PVM_IRQn; i <= LTDC_UP_ERR_IRQn; i++)
+        HAL_NVIC_SetPriority(i, 6, 0);
     SystemClock_Config();
-    vPortSetupTimerInterrupt();
 
     CONSOLE_Config();
 
@@ -382,10 +460,10 @@ static void main_thread_fct(void *arg) {
     debug_sram6_readback = *sram6_test;
     debug_sram6_pass = (debug_sram6_readback == 0xAA556789U);
 
-    /* Test a full 800x480 YUV422 buffer across SRAM3 and SRAM4 */
+    /* Test a configured YUV422 buffer across SRAM3 and SRAM4. */
     {
         volatile uint32_t *buffer = (volatile uint32_t *)0x34200000UL;
-        const uint32_t words = (800U * 480U * 2U) / 4U;
+        const uint32_t words = MAX_IMG_FRAME_SIZE / sizeof(uint32_t);
         uint32_t i;
 
         /* Write test pattern */
@@ -409,10 +487,10 @@ static void main_thread_fct(void *arg) {
         debug_span34_done = 1;
     }
 
-    /* Test full 800x480 buffer across SRAM5 and SRAM6 */
+    /* Test a configured buffer across SRAM5 and SRAM6. */
     {
         volatile uint32_t *buffer = (volatile uint32_t *)0x342E0000UL;
-        const uint32_t words = (800U * 480U * 2U) / 4U;
+        const uint32_t words = MAX_IMG_FRAME_SIZE / sizeof(uint32_t);
         uint32_t i;
 
         /* Write test pattern */
@@ -456,9 +534,6 @@ static void main_thread_fct(void *arg) {
     LL_APB5_GRP1_EnableClockLowPower(~0);
     LL_MISC_EnableClockLowPower(~0);
 
-    app_run();
-
-    vTaskDelete(NULL);
 }
 
 HAL_StatusTypeDef MX_DCMIPP_ClockConfig(DCMIPP_HandleTypeDef *hdcmipp) {

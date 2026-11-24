@@ -1,3 +1,4 @@
+#include <sensors.h>
 #include "bmi270.h"
 #include "bosch/bmi270.h"
 #include "i2c.h"
@@ -10,6 +11,36 @@
 #define BMI270_SENSOR_ERRORS 0xdfu
 #define BMI270_BOTH_READY (BMI2_DRDY_ACC | BMI2_DRDY_GYR)
 #define BMI270_BOTH_ENABLED (BMI2_ACC_EN_MASK | BMI2_GYR_EN_MASK)
+
+#if SENSOR_BMI270_ACCEL_RANGE_G == 2
+#define BMI270_ACCEL_RANGE BMI2_ACC_RANGE_2G
+#elif SENSOR_BMI270_ACCEL_RANGE_G == 4
+#define BMI270_ACCEL_RANGE BMI2_ACC_RANGE_4G
+#elif SENSOR_BMI270_ACCEL_RANGE_G == 8
+#define BMI270_ACCEL_RANGE BMI2_ACC_RANGE_8G
+#else
+#define BMI270_ACCEL_RANGE BMI2_ACC_RANGE_16G
+#endif
+
+#if SENSOR_BMI270_GYRO_RANGE_DPS == 125
+#define BMI270_GYRO_RANGE BMI2_GYR_RANGE_125
+#elif SENSOR_BMI270_GYRO_RANGE_DPS == 250
+#define BMI270_GYRO_RANGE BMI2_GYR_RANGE_250
+#elif SENSOR_BMI270_GYRO_RANGE_DPS == 500
+#define BMI270_GYRO_RANGE BMI2_GYR_RANGE_500
+#elif SENSOR_BMI270_GYRO_RANGE_DPS == 1000
+#define BMI270_GYRO_RANGE BMI2_GYR_RANGE_1000
+#else
+#define BMI270_GYRO_RANGE BMI2_GYR_RANGE_2000
+#endif
+
+/* Both sensors encode the integer power-of-two rates from 25 Hz as 6..12. */
+#define BMI270_RATE_CODE(hz) \
+    ((hz) == 25U ? 6U : (hz) == 50U ? 7U : (hz) == 100U ? 8U : \
+     (hz) == 200U ? 9U : (hz) == 400U ? 10U : (hz) == 800U ? 11U : \
+     (hz) == 1600U ? 12U : 13U)
+#define BMI270_ACCEL_ODR BMI270_RATE_CODE(SENSOR_BMI270_ACCEL_RATE_HZ)
+#define BMI270_GYRO_ODR BMI270_RATE_CODE(SENSOR_BMI270_GYRO_RATE_HZ)
 
 /* The vendor API collapses transport errors to BMI2_E_COM_FAIL. Retain the
  * first bus error for the public API and stop subsequent transfers if an
@@ -87,13 +118,13 @@ static int verify_configuration(bmi270_t *sensor) {
     if (status != BMI270_OK)
         return status;
 
-    if (config[0].cfg.acc.odr != BMI2_ACC_ODR_100HZ ||
-        config[0].cfg.acc.range != BMI2_ACC_RANGE_2G ||
-        config[0].cfg.acc.bwp != BMI2_ACC_NORMAL_AVG4 ||
+    if (config[0].cfg.acc.odr != BMI270_ACCEL_ODR ||
+        config[0].cfg.acc.range != BMI270_ACCEL_RANGE ||
+        config[0].cfg.acc.bwp != SENSOR_BMI270_ACCEL_BANDWIDTH ||
         config[0].cfg.acc.filter_perf != BMI2_PERF_OPT_MODE ||
-        config[1].cfg.gyr.odr != BMI2_GYR_ODR_100HZ ||
-        config[1].cfg.gyr.range != BMI2_GYR_RANGE_250 ||
-        config[1].cfg.gyr.bwp != BMI2_GYR_NORMAL_MODE ||
+        config[1].cfg.gyr.odr != BMI270_GYRO_ODR ||
+        config[1].cfg.gyr.range != BMI270_GYRO_RANGE ||
+        config[1].cfg.gyr.bwp != SENSOR_BMI270_GYRO_BANDWIDTH ||
         config[1].cfg.gyr.filter_perf != BMI2_PERF_OPT_MODE ||
         config[1].cfg.gyr.noise_perf != BMI2_PERF_OPT_MODE ||
         config[1].cfg.gyr.ois_range != BMI2_GYR_OIS_250)
@@ -167,20 +198,20 @@ int bmi270_init(bmi270_t *sensor, uint8_t address) {
         {
             .type = BMI2_ACCEL,
             .cfg.acc = {
-                .odr = BMI2_ACC_ODR_100HZ,
-                .bwp = BMI2_ACC_NORMAL_AVG4,
+                .odr = BMI270_ACCEL_ODR,
+                .bwp = SENSOR_BMI270_ACCEL_BANDWIDTH,
                 .filter_perf = BMI2_PERF_OPT_MODE,
-                .range = BMI2_ACC_RANGE_2G
+                .range = BMI270_ACCEL_RANGE
             }
         },
         {
             .type = BMI2_GYRO,
             .cfg.gyr = {
-                .odr = BMI2_GYR_ODR_100HZ,
-                .bwp = BMI2_GYR_NORMAL_MODE,
+                .odr = BMI270_GYRO_ODR,
+                .bwp = SENSOR_BMI270_GYRO_BANDWIDTH,
                 .filter_perf = BMI2_PERF_OPT_MODE,
                 .ois_range = BMI2_GYR_OIS_250,
-                .range = BMI2_GYR_RANGE_250,
+                .range = BMI270_GYRO_RANGE,
                 .noise_perf = BMI2_PERF_OPT_MODE
             }
         }
@@ -242,19 +273,18 @@ int bmi270_read(bmi270_t *sensor, bmi270_sample_t *sample) {
     if ((data.status & BMI270_BOTH_READY) != BMI270_BOTH_READY)
         return BMI270_NOT_READY;
 
-    /* Reduce 2000/32768 and 250000/32768 before multiplication, keeping
-     * even full-scale values within int32_t without floating point or libm.
-     */
+    /* Scale using the same full-scale ranges written above. The gyro product
+     * needs 64 bits at the larger ranges; no floating point is required. */
     bmi270_sample_t result = {
         .accel_mg = {
-            (int32_t)data.acc.x * 125 / 2048,
-            (int32_t)data.acc.y * 125 / 2048,
-            (int32_t)data.acc.z * 125 / 2048
+            (int32_t)data.acc.x * (int32_t)(SENSOR_BMI270_ACCEL_RANGE_G * 1000U) / 32768,
+            (int32_t)data.acc.y * (int32_t)(SENSOR_BMI270_ACCEL_RANGE_G * 1000U) / 32768,
+            (int32_t)data.acc.z * (int32_t)(SENSOR_BMI270_ACCEL_RANGE_G * 1000U) / 32768
         },
         .gyro_mdps = {
-            (int32_t)data.gyr.x * 15625 / 2048,
-            (int32_t)data.gyr.y * 15625 / 2048,
-            (int32_t)data.gyr.z * 15625 / 2048
+            (int64_t)data.gyr.x * (SENSOR_BMI270_GYRO_RANGE_DPS * 1000) / 32768,
+            (int64_t)data.gyr.y * (SENSOR_BMI270_GYRO_RANGE_DPS * 1000) / 32768,
+            (int64_t)data.gyr.z * (SENSOR_BMI270_GYRO_RANGE_DPS * 1000) / 32768
         }
     };
 

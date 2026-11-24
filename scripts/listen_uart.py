@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
-"""Display the NUCLEO's ST-LINK virtual COM port in your terminal."""
+"""Print incoming UART output in your terminal (defaults to radio baud rate)."""
 
 import argparse
 import sys
 
+if __package__:
+    from .firmware_config import config_value
+else:
+    from firmware_config import config_value
+
+DEFAULT_BAUD = config_value("COMMS_UART_BAUD")
 
 # ST-LINK/V2-1, V3, V3E and V3 variants that provide a virtual COM port.
 STLINK_USB_IDS = {0x374B, 0x374D, 0x374E, 0x374F, 0x3752, 0x3753, 0x3754}
@@ -14,7 +20,9 @@ def describe_port(port):
     identifier = ""
     if port.vid is not None and port.pid is not None:
         identifier = f" [{port.vid:04x}:{port.pid:04x}]"
-    return f"{port.device}: {description}{identifier}"
+    serial_number = getattr(port, "serial_number", None)
+    serial_id = f" serial={serial_number}" if serial_number else ""
+    return f"{port.device}: {description}{identifier}{serial_id}"
 
 
 def is_stlink(port):
@@ -27,10 +35,24 @@ def is_stlink(port):
     )
 
 
-def choose_port(ports, requested=None):
+def choose_port(ports, requested=None, serial_number=None):
     """Select one ST-LINK, or the sole serial port; never guess between boards."""
     if requested:
         return requested
+    if serial_number:
+        matches = [port for port in ports
+                   if getattr(port, "serial_number", None) == serial_number]
+        if len(matches) == 1:
+            return matches[0].device
+        if not matches:
+            raise ValueError(
+                f"No serial port matches serial number {serial_number!r}. "
+                "Use --list-ports to see connected devices."
+            )
+        raise ValueError(
+            f"Multiple ports match serial number {serial_number!r}; use --port:\n" +
+            "\n".join(f"  {describe_port(port)}" for port in matches)
+        )
     stlinks = [port for port in ports if is_stlink(port)]
     if len(stlinks) == 1:
         return stlinks[0].device
@@ -83,8 +105,11 @@ def stream_output(connection, output):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--port", help="serial device, e.g. /dev/ttyACM0 or COM3")
-    parser.add_argument("--baud", type=int, default=115200, help="baud rate (default: 115200)")
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--port", help="serial device, e.g. /dev/ttyACM0 or COM3")
+    selection.add_argument("--serial-number", help="USB serial number from --list-ports")
+    parser.add_argument("--baud", type=int, default=DEFAULT_BAUD,
+                        help=f"baud rate (default: {DEFAULT_BAUD})")
     parser.add_argument("--list-ports", action="store_true", help="list serial ports and exit")
     args = parser.parse_args(argv)
     if args.baud <= 0:
@@ -108,7 +133,7 @@ def main(argv=None):
             if not ports:
                 print("No serial ports found.")
             return 0
-        device = choose_port(ports, args.port)
+        device = choose_port(ports, args.port, args.serial_number)
         connection = open_port(serial, device, args.baud)
         try:
             print(

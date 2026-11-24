@@ -4,6 +4,14 @@
 #include <stdint.h>
 #include "config.h"
 
+#if (defined(CUBESAT_STM32H7) + defined(CUBESAT_STM32N6)) != 1
+#error "Select only one STM32 family"
+#endif
+
+#if defined(CUBESAT_NUCLEO_H753ZI) && !defined(CUBESAT_STM32H7)
+#error "NUCLEO-H753ZI requires STM32H7"
+#endif
+
 #define MMIO32(address) (*(volatile uint32_t *)(uintptr_t)(address))
 #define MMIO8(address) (*(volatile uint8_t *)(uintptr_t)(address))
 
