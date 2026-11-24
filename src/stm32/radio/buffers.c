@@ -5,10 +5,12 @@
 struct comms_image_buffer comms_image_buffer;
 struct comms_telemetry_buffer comms_telemetry_buffer;
 static uint8_t image_head[COMMS_IMAGE_HEAD_SIZE];
+#if COMMS_IMAGE_TAIL_SIZE > 0
 #if defined(CUBESAT_STM32H7)
 __attribute__((section(".image_buffer_d2"), aligned(32)))
 #endif
-static uint32_t image_tail[(IMAGE_MAX_JPEG_SIZE - COMMS_IMAGE_HEAD_SIZE) / 4U];
+static uint32_t image_tail[COMMS_IMAGE_TAIL_SIZE / 4U];
+#endif
 
 static void barrier(void) {
 #if defined(__arm__) || defined(__thumb__)
@@ -20,6 +22,7 @@ static void barrier(void) {
 
 void comms_buffers_init(void) {
 #if defined(CUBESAT_STM32H7)
+#if COMMS_IMAGE_TAIL_SIZE > 0
     volatile uint32_t *ahb2enr = (volatile uint32_t *)0x580244dcU;
     *ahb2enr |= 7U << 29;
     (void)*ahb2enr;
@@ -27,6 +30,7 @@ void comms_buffers_init(void) {
     for (uint32_t i = 0; i < sizeof(image_tail) / sizeof(image_tail[0]); ++i)
         ((volatile uint32_t *)image_tail)[i] = 0;
     __asm__ volatile("dsb" ::: "memory");
+#endif
 #endif
     memset(&comms_image_buffer, 0, sizeof(comms_image_buffer));
     memset(&comms_telemetry_buffer, 0, sizeof(comms_telemetry_buffer));
@@ -77,9 +81,11 @@ int comms_image_append(uint32_t offset, const uint8_t *data, uint32_t count) {
         head_count = count;
     if (head_count)
         memcpy(image_head + offset, data, head_count);
+#if COMMS_IMAGE_TAIL_SIZE > 0
     if (count > head_count)
         memcpy((uint8_t *)image_tail + (offset + head_count - COMMS_IMAGE_HEAD_SIZE),
                data + head_count, count - head_count);
+#endif
     comms_image_buffer.received += count;
     return 0;
 }
@@ -104,8 +110,11 @@ const uint8_t *comms_image_data(uint32_t offset, uint32_t *contiguous) {
     if (size > comms_image_buffer.length - offset)
         size = comms_image_buffer.length - offset;
     *contiguous = size;
-    return offset < COMMS_IMAGE_HEAD_SIZE ? image_head + offset :
-           (const uint8_t *)image_tail + (offset - COMMS_IMAGE_HEAD_SIZE);
+#if COMMS_IMAGE_TAIL_SIZE > 0
+    if (offset >= COMMS_IMAGE_HEAD_SIZE)
+        return (const uint8_t *)image_tail + (offset - COMMS_IMAGE_HEAD_SIZE);
+#endif
+    return image_head + offset;
 }
 
 int comms_telemetry_begin(void) {

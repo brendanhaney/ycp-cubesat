@@ -32,12 +32,7 @@
 #include "ff.h"
 #include "image_protocol.h"
 
-#ifndef APP_VERSION_STRING
-#define APP_VERSION_STRING "dev"
-#endif
-
 #define CAPT_BUFFER_NB 2
-#define MAX_SAVED_IMAGE_NUM 99999U
 
 static uint8_t capture_buffer[CAPT_BUFFER_NB][MAX_IMG_FRAME_SIZE] ALIGN_32 IN_CAPTURE_RAM;
 static uint8_t debug_jpeg_buffer[MAX_IMG_FRAME_SIZE] ALIGN_32
@@ -50,7 +45,7 @@ static volatile int held_capture = -1;
 static uint32_t active_capture;
 static int camera_initialized;
 static payload_saved_image_t latest_saved_image;
-static uint32_t next_image_num = 1;
+static uint32_t next_image_num = PAYLOAD_FIRST_IMAGE_NUM;
 
 volatile uint32_t debug_frame_events = 0;
 volatile uint32_t debug_isp_updates = 0;
@@ -109,7 +104,7 @@ static void JPEG_SaveToSD(void) {
 
     /* Scan existing names once per boot, then continue from the next number.
      * CREATE_NEW still protects files added by another writer. Never wrap. */
-    for (image_num = next_image_num; image_num <= MAX_SAVED_IMAGE_NUM; image_num++) {
+    for (image_num = next_image_num; image_num <= PAYLOAD_MAX_SAVED_IMAGE_NUM; image_num++) {
         /* Preserve existing names, then keep the wider counter within 8.3. */
         const char *format = image_num <= 999 ? "0:/IMAGE%03lu.JPG" : "0:/IMG%05lu.JPG";
         snprintf(debug_jpeg_sd_filename, sizeof(debug_jpeg_sd_filename), format,
@@ -137,7 +132,7 @@ static void JPEG_SaveToSD(void) {
     }
 
     /* Every supported filename is occupied. */
-    if (image_num > MAX_SAVED_IMAGE_NUM) {
+    if (image_num > PAYLOAD_MAX_SAVED_IMAGE_NUM) {
         debug_jpeg_sd_no_slot = 1;
         debug_jpeg_sd_open = FR_EXIST;
         debug_jpeg_sd_done = 1;
@@ -307,6 +302,7 @@ payload_status_t payload_take_jpeg(payload_image_t *image, uint32_t timeout_ms) 
         return PAYLOAD_CAMERA_ERROR;
 
     const uint32_t start = HAL_GetTick();
+#if CAPTURE_SETTLE_FRAMES > 0
     const uint32_t updates = debug_isp_updates;
 
     while ((uint32_t)(debug_isp_updates - updates) < CAPTURE_SETTLE_FRAMES) {
@@ -321,6 +317,7 @@ payload_status_t payload_take_jpeg(payload_image_t *image, uint32_t timeout_ms) 
 
         __WFI();
     }
+#endif
 
     capture_armed = 1;
 
@@ -424,11 +421,11 @@ void app_capture_step(int automatic_capture) {
         if (debug_capture_status == PAYLOAD_OK)
             debug_capture_status = payload_save_jpeg(&image);
 
+#if PAYLOAD_CAPTURE_LED_MS > 0
         BSP_LED_On(LED_GREEN);
-
-        HAL_Delay(100);
-
+        HAL_Delay(PAYLOAD_CAPTURE_LED_MS);
         BSP_LED_Off(LED_GREEN);
+#endif
 
         if (debug_capture_request) {
 

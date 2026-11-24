@@ -4,6 +4,12 @@
 import argparse
 import sys
 
+if __package__:
+    from .firmware_config import config_value
+else:
+    from firmware_config import config_value
+
+DEFAULT_BAUD = config_value("COMMS_UART_BAUD")
 
 # ST-LINK/V2-1, V3, V3E and V3 variants that provide a virtual COM port.
 STLINK_USB_IDS = {0x374B, 0x374D, 0x374E, 0x374F, 0x3752, 0x3753, 0x3754}
@@ -102,7 +108,8 @@ def main(argv=None):
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--port", help="serial device, e.g. /dev/ttyACM0 or COM3")
     selection.add_argument("--serial-number", help="USB serial number from --list-ports")
-    parser.add_argument("--baud", type=int, default=921600, help="baud rate (default: 921600)")
+    parser.add_argument("--baud", type=int, default=DEFAULT_BAUD,
+                        help=f"baud rate (default: {DEFAULT_BAUD})")
     parser.add_argument("--list-ports", action="store_true", help="list serial ports and exit")
     args = parser.parse_args(argv)
     if args.baud <= 0:

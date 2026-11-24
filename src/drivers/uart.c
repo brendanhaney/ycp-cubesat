@@ -35,7 +35,7 @@ void uart_init(void) {
     USART_CR3 = 0;
     USART_PRESC = 0;
     const uint32_t kernel_hz = 64000000U >> ((STM32H7_RCC_CR >> 3) & 3U);
-    USART_BRR = (kernel_hz + 115200U / 2U) / 115200U;
+    USART_BRR = (kernel_hz + AVIONICS_UART_BAUD / 2U) / AVIONICS_UART_BAUD;
     USART_CR1 = USART_CR1_UE | USART_CR1_TE;
 #else
     USART_CR1 |= USART_CR1_UE | USART_CR1_TE;
@@ -67,7 +67,7 @@ void uart_init(void) {
     USART_CR3 = 0;
     USART_PRESC = 0;
     uint32_t kernel_hz = 64000000U >> ((STM32N6_RCC_HSICFGR >> 7) & 3U);
-    USART_BRR = (kernel_hz + 115200U / 2U) / 115200U;
+    USART_BRR = (kernel_hz + PAYLOAD_UART_BAUD / 2U) / PAYLOAD_UART_BAUD;
     USART_CR1 = USART_CR1_UE | USART_CR1_TE;
 #endif
 }

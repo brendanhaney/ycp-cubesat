@@ -1,7 +1,15 @@
 #ifndef SPI_DRIVER_H
 #define SPI_DRIVER_H
 
+#include <config.h>
 #include <typedefs.h>
+
+#if SPI_DEMO_MASTER_MBR < 0 || SPI_DEMO_MASTER_MBR > 7
+#error "SPI master prescaler encoding must be between 0 and 7"
+#endif
+#if SPI_POLL_LIMIT < 1 || SPI_DEMO_ROUNDS < 1
+#error "SPI poll limits and demo rounds must be nonzero"
+#endif
 
 #define SPI_RADIO   0U
 #define SPI_PAYLOAD 1U

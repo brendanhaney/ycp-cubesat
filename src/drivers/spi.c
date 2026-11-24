@@ -107,7 +107,7 @@ int spi4_init(int master) {
     is_master = !!master;
 
     SPI_CR1 = 0;
-    SPI_CFG1 = 7U | (7U << 28);
+    SPI_CFG1 = 7U | (SPI_DEMO_MASTER_MBR << 28);
     SPI_CFG2 = SPI_CFG2_AFCNTR |
         (is_master ? SPI_CFG2_MASTER | SPI_CFG2_SSM : 0);
     if (is_master) {

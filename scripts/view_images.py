@@ -8,7 +8,7 @@ Capture: python3 scripts/view_images.py --port /dev/ttyACM0 --headless \
 
 Use --list-ports to identify the comms board when both boards are attached.
 Use --serial-number SERIAL to keep selecting that board after port renumbering.
-The default UART configuration is 921600 baud, 8N1. The graphical viewer also
+The default UART baud follows include/config.h (8N1). The graphical viewer also
 requires tkinter (on Debian/Ubuntu: sudo apt install python3-tk).
 """
 
@@ -27,14 +27,17 @@ import zlib
 
 if __package__:
     from .listen_uart import choose_port, describe_port, open_port
+    from .firmware_config import config_value
 else:
     from listen_uart import choose_port, describe_port, open_port
+    from firmware_config import config_value
 
 
 MAGIC = b"YCPJPG1\0"
 HEADER = struct.Struct("<8sIIII")
 HEADER_SIZE = HEADER.size
-MAX_JPEG_BYTES = 800 * 480 * 2
+MAX_JPEG_BYTES = config_value("MAX_IMG_FRAME_SIZE")
+DEFAULT_BAUD = config_value("COMMS_UART_BAUD")
 READ_SIZE = 4096
 
 
@@ -338,7 +341,8 @@ def main(argv=None):
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--port", help="comms serial device, e.g. /dev/ttyACM0 or COM3")
     selection.add_argument("--serial-number", help="select the comms board by its USB serial number")
-    parser.add_argument("--baud", type=int, default=921600, help="baud rate (default: 921600)")
+    parser.add_argument("--baud", type=int, default=DEFAULT_BAUD,
+                        help=f"baud rate (default: {DEFAULT_BAUD})")
     parser.add_argument("--list-ports", action="store_true", help="list serial ports and exit")
     parser.add_argument("--headless", action="store_true", help="receive without opening a window")
     parser.add_argument("--count", type=int, metavar="N", help="stop after N valid image frames")

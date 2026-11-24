@@ -53,7 +53,7 @@ int JPG_Init(JPG_conf_t *conf) {
     jpeg_conf.ChromaSubsampling = JPEG_422_SUBSAMPLING;
     jpeg_conf.ImageWidth = conf->width;
     jpeg_conf.ImageHeight = conf->height;
-    jpeg_conf.ImageQuality = 90;
+    jpeg_conf.ImageQuality = PAYLOAD_JPEG_QUALITY;
     ret = HAL_JPEG_ConfigEncoding(&ctx->hjpeg, &jpeg_conf);
     if (ret)
         return ret;
@@ -87,7 +87,7 @@ int JPG_Encode(uint8_t *p_dst, uint8_t *p_src, int dst_size, int src_size) {
     }
 
     ctx->jpg_encode_len = 0;
-    ret = HAL_JPEG_Encode(&ctx->hjpeg, mcu_buffer, sizeof(mcu_buffer), p_dst, dst_size, 1000);
+    ret = HAL_JPEG_Encode(&ctx->hjpeg, mcu_buffer, sizeof(mcu_buffer), p_dst, dst_size, PAYLOAD_JPEG_TIMEOUT_MS);
     if (ret != HAL_OK) {
         JPG_conf_t conf = ctx->conf;
         HAL_JPEG_DeInit(&ctx->hjpeg);

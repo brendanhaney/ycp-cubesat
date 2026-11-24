@@ -2,6 +2,7 @@
 #include <config.h>
 #include <registers.h>
 #include <payload_spi_dma.h>
+#include <image_protocol.h>
 
 #if defined(CUBESAT_STM32H7)
 
@@ -31,10 +32,6 @@
 #define CACHE_INVALIDATE 0xE000EF5CU
 #define CACHE_CLEAN      0xE000EF68U
 #define CACHE_CLEAN_INVALIDATE 0xE000EF70U
-
-#ifndef PAYLOAD_SPI_DMA_STOP_LIMIT
-#define PAYLOAD_SPI_DMA_STOP_LIMIT 100000U
-#endif
 
 enum dma_state { DMA_IDLE, DMA_ACTIVE, DMA_DONE, DMA_FAILED };
 static enum dma_state state;
@@ -107,7 +104,7 @@ int payload_spi_dma_start(const uint8_t *tx, uint8_t *rx, uint32_t length) {
     const uintptr_t receive = (uintptr_t)rx;
     /* Fixed-size frames and separate cache-line ownership keep the contract
      * simple. Reject DTCM/flash pointers instead of silently running bad DMA. */
-    if (!initialized || state != DMA_IDLE || length != 256U ||
+    if (!initialized || state != DMA_IDLE || length != IMAGE_SPI_FRAME_SIZE ||
         !valid_buffer(transmit, length) || !valid_buffer(receive, length) ||
         (transmit < receive + length && receive < transmit + length))
         return -1;

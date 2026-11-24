@@ -1,11 +1,17 @@
 #ifndef TELEMETRY_PROTOCOL_H
 #define TELEMETRY_PROTOCOL_H
 
+#include <config.h>
+
 #define TELEMETRY_OP_READ 0x10U
 #define TELEMETRY_WORDS 16U
 #define TELEMETRY_DATA_SIZE (TELEMETRY_WORDS * 4U)
-#define TELEMETRY_SAMPLE_INTERVAL_MS 1000U
-#define TELEMETRY_INTERVAL_MS 10000U
+
+#if TELEMETRY_SAMPLE_INTERVAL_MS < 1 || TELEMETRY_SAMPLE_INTERVAL_MS > 0x7fffffffU || \
+    TELEMETRY_INTERVAL_MS < 1 || TELEMETRY_INTERVAL_MS > 0x7fffffffU || \
+    AVIONICS_STANDALONE_POLL_INTERVAL_MS < 1 || AVIONICS_STANDALONE_POLL_INTERVAL_MS > 0x7fffffffU
+#error "Avionics/telemetry intervals must be positive and fit the timer range"
+#endif
 
 enum telemetry_word {
     TELEMETRY_COUNTER = 0,

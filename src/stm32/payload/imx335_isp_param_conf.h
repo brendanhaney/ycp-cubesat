@@ -21,6 +21,8 @@
 #ifndef __IMX335_ISP_PARAM_CONF__H
 #define __IMX335_ISP_PARAM_CONF__H
 
+#include "config.h"
+
 /* DCMIPP ISP configuration for IMX335 sensor */
 static const ISP_IQParamTypeDef ISP_IQParamCacheInit_IMX335 = {
     .sensorGainStatic =
@@ -33,7 +35,7 @@ static const ISP_IQParamTypeDef ISP_IQParamCacheInit_IMX335 = {
         },
     .AECAlgo =
         {
-            .enable = 1,
+            .enable = PAYLOAD_AUTO_EXPOSURE,
             .exposureCompensation = EXPOSURE_TARGET_0_0_EV,
             .antiFlickerFreq = ANTIFLICKER_NONE,
         },
@@ -97,7 +99,7 @@ static const ISP_IQParamTypeDef ISP_IQParamCacheInit_IMX335 = {
                             }},
     .AWBAlgo =
         {
-            .enable = 1,
+            .enable = PAYLOAD_AUTO_WHITE_BALANCE,
             .label =
                 {
                     "JudgeII-A",

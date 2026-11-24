@@ -23,17 +23,6 @@
 #include "stm32n6xx.h"
 #include "utils.h"
 
-/* Define sensor orientation */
-#if CAMERA_SELFY == 1
-#define SENSOR_IMX335_FLIP CMW_MIRRORFLIP_MIRROR
-#else
-#define SENSOR_IMX335_FLIP CMW_MIRRORFLIP_NONE
-#endif
-
-/* Define sensor width x height size. 0x0 means full frame */
-#define SENSOR_WIDTH 0
-#define SENSOR_HEIGHT 0
-
 static CMW_Sensor_Name_t sensor;
 static int is_sensor_valid = 0;
 
@@ -136,13 +125,13 @@ int CAM_Init(CAM_conf_t *conf) {
         is_sensor_valid = 1;
     }
 
-    cam_conf.width = SENSOR_WIDTH;
-    cam_conf.height = SENSOR_HEIGHT;
+    cam_conf.width = PAYLOAD_SENSOR_WIDTH;
+    cam_conf.height = PAYLOAD_SENSOR_HEIGHT;
     cam_conf.fps = conf->fps;
     if (sensor != CMW_IMX335_Sensor)
         return CMW_ERROR_COMPONENT_FAILURE;
     printf("Detected IMX335\n");
-    cam_conf.mirror_flip = SENSOR_IMX335_FLIP;
+    cam_conf.mirror_flip = PAYLOAD_CAMERA_MIRROR_FLIP;
 
     ret = CMW_CAMERA_Init(&cam_conf, NULL);
     if (ret != CMW_ERROR_NONE)

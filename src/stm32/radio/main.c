@@ -93,7 +93,7 @@ static int request_frame(enum payload_spi_target target, uint8_t opcode,
 
 static int request(uint8_t opcode, uint32_t image_id, uint32_t offset) {
     return request_frame(PAYLOAD_SPI_TARGET_PAYLOAD, opcode, image_id, offset,
-                         response, 250U);
+                         response, COMMS_IMAGE_REQUEST_TIMEOUT_MS);
 }
 
 static int32_t telemetry_value(enum telemetry_word word) {
@@ -154,7 +154,8 @@ static void service_telemetry(void) {
         last_telemetry_poll = now;
         if (comms_telemetry_begin() == 0) {
             if (request_frame(PAYLOAD_SPI_TARGET_AVIONICS, TELEMETRY_OP_READ,
-                              0, 0, telemetry_response, 500U) == IMAGE_STATUS_OK &&
+                              0, 0, telemetry_response,
+                              COMMS_TELEMETRY_REQUEST_TIMEOUT_MS) == IMAGE_STATUS_OK &&
                 image_get_u16(telemetry_response + 6) == TELEMETRY_DATA_SIZE &&
                 image_get_u32(telemetry_response + 20) == TELEMETRY_DATA_SIZE &&
                 image_get_u32(telemetry_response + 12) ==
@@ -247,8 +248,8 @@ static void handle_image(void) {
             comms_buffer_abort(&comms_image_buffer.flags);
             return;
         }
-        if (count > 1024U)
-            count = 1024U;
+        if (count > COMMS_IMAGE_CRC_BLOCK_SIZE)
+            count = COMMS_IMAGE_CRC_BLOCK_SIZE;
         received_crc = image_crc32_update(received_crc, data, count);
         offset += count;
     }
@@ -289,7 +290,8 @@ int main(void) {
     }
 
     comms_buffers_init();
-    uart_printf("Radio: shared SPI, telemetry receive 1 second, print 10 seconds\n");
+    uart_printf("Radio: shared SPI, telemetry receive %d ms, print %d ms\n",
+                TELEMETRY_SAMPLE_INTERVAL_MS, TELEMETRY_INTERVAL_MS);
     last_telemetry_poll = uptime_ms() - TELEMETRY_SAMPLE_INTERVAL_MS;
     last_telemetry_print = uptime_ms() - TELEMETRY_INTERVAL_MS;
 

@@ -21,7 +21,13 @@
 #define __ISP_CONF_H
 
 /* Includes ------------------------------------------------------------------*/
+#include "config.h"
+
+#if PAYLOAD_AUTO_EXPOSURE
 #define ISP_MW_SW_AEC_ALGO_SUPPORT
+#endif
+#if PAYLOAD_AUTO_WHITE_BALANCE
 #define ISP_MW_SW_AWB_ALGO_SUPPORT
+#endif
 
 #endif /* __ISP_CONF_H */

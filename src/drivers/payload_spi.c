@@ -5,10 +5,6 @@
 #include <payload_spi.h>
 #include <payload_spi_dma.h>
 
-#ifndef PAYLOAD_SPI_POLL_LIMIT
-#define PAYLOAD_SPI_POLL_LIMIT 1000000U
-#endif
-
 #if defined(CUBESAT_STM32N6) || defined(CUBESAT_AVIONICS_SPI_SLAVE)
 #define LINK_SLAVE
 #endif
@@ -20,24 +16,35 @@
 #define LINK_GPIOD 0x58020C00U
 #define LINK_GPIOE 0x58021000U
 #define LINK_GPIOF 0x58021400U
+#define LINK_GPIO_PORT(index) (LINK_GPIOA + 0x400U * (index))
 #if defined(LINK_SLAVE)
-#define LINK_CS_PORT LINK_GPIOD
-#define LINK_CS_MASK (1U << 14) /* D10: software chip select */
-#define LINK_READY_PORT LINK_GPIOD
-#define LINK_READY_MASK (1U << 15) /* Arduino D9 */
+#define LINK_CS_PORT LINK_GPIO_PORT(AVIONICS_SPI_CS_GPIO_PORT)
+#define LINK_CS_PIN AVIONICS_SPI_CS_GPIO_PIN
+#define LINK_CS_MASK (1U << LINK_CS_PIN)
+#define LINK_READY_PORT LINK_GPIO_PORT(AVIONICS_SPI_READY_GPIO_PORT)
+#define LINK_READY_PIN AVIONICS_SPI_READY_GPIO_PIN
+#define LINK_READY_MASK (1U << LINK_READY_PIN)
 #else
 struct target_pins {
     uintptr_t cs_port;
+    unsigned int cs_pin;
     uint32_t cs_mask;
     uintptr_t ready_port;
+    unsigned int ready_pin;
     uint32_t ready_mask;
 };
 static const struct target_pins targets[] = {
     [PAYLOAD_SPI_TARGET_PAYLOAD] = {
-        LINK_GPIOD, 1U << 14, LINK_GPIOE, 1U << 9, /* D10 CS, D6 READY */
+        LINK_GPIO_PORT(COMMS_PAYLOAD_CS_GPIO_PORT), COMMS_PAYLOAD_CS_GPIO_PIN,
+        1U << COMMS_PAYLOAD_CS_GPIO_PIN,
+        LINK_GPIO_PORT(COMMS_PAYLOAD_READY_GPIO_PORT), COMMS_PAYLOAD_READY_GPIO_PIN,
+        1U << COMMS_PAYLOAD_READY_GPIO_PIN,
     },
     [PAYLOAD_SPI_TARGET_AVIONICS] = {
-        LINK_GPIOF, 1U << 3, LINK_GPIOD, 1U << 15, /* D8 CS, D9 READY */
+        LINK_GPIO_PORT(COMMS_AVIONICS_CS_GPIO_PORT), COMMS_AVIONICS_CS_GPIO_PIN,
+        1U << COMMS_AVIONICS_CS_GPIO_PIN,
+        LINK_GPIO_PORT(COMMS_AVIONICS_READY_GPIO_PORT), COMMS_AVIONICS_READY_GPIO_PIN,
+        1U << COMMS_AVIONICS_READY_GPIO_PIN,
     },
 };
 enum avionics_phase { AVIONICS_IDLE, AVIONICS_WAIT_READY, AVIONICS_WAIT_IDLE };
@@ -49,10 +56,12 @@ static enum avionics_phase avionics_pending;
 #define LINK_GPIOD 0x56020C00U
 #define LINK_GPIOE 0x56021000U
 #define LINK_GPIOG 0x56021800U
+#define LINK_GPIO_PORT(index) (LINK_GPIOA + 0x400U * (index))
 #define LINK_CS_PORT LINK_GPIOA
 #define LINK_CS_MASK (1U << 3)
-#define LINK_READY_PORT LINK_GPIOD
-#define LINK_READY_MASK (1U << 7) /* Arduino D9, GPIO_EXTI7 */
+#define LINK_READY_PORT LINK_GPIO_PORT(PAYLOAD_SPI_READY_GPIO_PORT)
+#define LINK_READY_PIN PAYLOAD_SPI_READY_GPIO_PIN
+#define LINK_READY_MASK (1U << LINK_READY_PIN)
 #endif
 
 #define LINK_REG(offset) MMIO32(LINK_SPI_BASE + (offset))
@@ -131,6 +140,14 @@ static void alternate(uintptr_t port, unsigned int pin, unsigned int pull) {
     GPIO_OSPEEDR(port) = (GPIO_OSPEEDR(port) & ~(3U << shift)) | (1U << shift);
     GPIO_PUPDR(port) = (GPIO_PUPDR(port) & ~(3U << shift)) | (pull << shift);
     GPIO_MODER(port) = (GPIO_MODER(port) & ~(3U << shift)) | (2U << shift);
+}
+
+static void gpio_pin(uintptr_t port, unsigned int pin, int output, unsigned int pull) {
+    const unsigned int shift = pin * 2U;
+    GPIO_OTYPER(port) &= ~(1U << pin);
+    GPIO_PUPDR(port) = (GPIO_PUPDR(port) & ~(3U << shift)) | (pull << shift);
+    GPIO_MODER(port) = (GPIO_MODER(port) & ~(3U << shift)) |
+                       ((output ? 1U : 0U) << shift);
 }
 
 static void ready(int high) {
@@ -286,32 +303,35 @@ int payload_spi_init(void) {
         if (!--remaining) return -1;
     MMIO32(STM32H7_RCC_BASE + 0x4CU) &= ~(3U << 28);
     STM32H7_RCC_D2CCIP1R = (STM32H7_RCC_D2CCIP1R & ~(7U << 12)) | (4U << 12);
-    STM32H7_RCC_AHB4ENR |= (1U << 0) | (1U << 1) | (1U << 3) | (1U << 4) | (1U << 5);
+    STM32H7_RCC_AHB4ENR |= (1U << 0) | (1U << 1) | (1U << 3) | (1U << 4) | (1U << 5)
+#if defined(LINK_SLAVE)
+        | (1U << AVIONICS_SPI_CS_GPIO_PORT) | (1U << AVIONICS_SPI_READY_GPIO_PORT)
+#else
+        | (1U << COMMS_PAYLOAD_CS_GPIO_PORT) | (1U << COMMS_PAYLOAD_READY_GPIO_PORT)
+        | (1U << COMMS_AVIONICS_CS_GPIO_PORT) | (1U << COMMS_AVIONICS_READY_GPIO_PORT)
+#endif
+        ;
     STM32H7_RCC_APB2ENR |= 1U << 12;
     (void)STM32H7_RCC_APB2ENR;
 #if defined(LINK_SLAVE)
     ready(0);
-    GPIO_OTYPER(LINK_GPIOD) &= ~LINK_READY_MASK;
-    GPIO_MODER(LINK_GPIOD) = (GPIO_MODER(LINK_GPIOD) & ~(15U << 28)) | (1U << 30);
-    GPIO_PUPDR(LINK_GPIOD) = (GPIO_PUPDR(LINK_GPIOD) & ~(15U << 28)) | (1U << 28);
+    gpio_pin(LINK_CS_PORT, LINK_CS_PIN, 0, 1U);
+    gpio_pin(LINK_READY_PORT, LINK_READY_PIN, 1, 0U);
 #else
     /* Raise both selects before making either pin an output. */
-    GPIO_BSRR(LINK_GPIOD) = 1U << 14;
-    GPIO_BSRR(LINK_GPIOF) = 1U << 3;
-    GPIO_OTYPER(LINK_GPIOD) &= ~(1U << 14);
-    GPIO_OTYPER(LINK_GPIOF) &= ~(1U << 3);
-    GPIO_MODER(LINK_GPIOD) = (GPIO_MODER(LINK_GPIOD) & ~(15U << 28)) | (1U << 28);
-    GPIO_MODER(LINK_GPIOE) &= ~(3U << 18);
-    GPIO_MODER(LINK_GPIOF) = (GPIO_MODER(LINK_GPIOF) & ~(3U << 6)) | (1U << 6);
-    GPIO_PUPDR(LINK_GPIOD) = (GPIO_PUPDR(LINK_GPIOD) & ~(15U << 28)) | (2U << 30);
-    GPIO_PUPDR(LINK_GPIOE) = (GPIO_PUPDR(LINK_GPIOE) & ~(3U << 18)) | (2U << 18);
-    GPIO_PUPDR(LINK_GPIOF) &= ~(3U << 6);
+    for (unsigned int i = 0; i < sizeof(targets) / sizeof(targets[0]); ++i)
+        GPIO_BSRR(targets[i].cs_port) = targets[i].cs_mask;
+    for (unsigned int i = 0; i < sizeof(targets) / sizeof(targets[0]); ++i) {
+        gpio_pin(targets[i].cs_port, targets[i].cs_pin, 1, 0U);
+        gpio_pin(targets[i].ready_port, targets[i].ready_pin, 0, 2U);
+    }
     avionics_pending = AVIONICS_IDLE;
 #endif
     alternate(LINK_GPIOA, 5U, 2U); // Hold SCK low during peripheral reset.
 #if !defined(LINK_SLAVE)
     /* Slow the clock edges to avoid extra crossings on the shared jumper bus. */
-    GPIO_OSPEEDR(LINK_GPIOA) &= ~(3U << 10);
+    GPIO_OSPEEDR(LINK_GPIOA) = (GPIO_OSPEEDR(LINK_GPIOA) & ~(3U << 10)) |
+                             (PAYLOAD_SPI_SCK_SPEED << 10);
 #endif
 #if defined(CUBESAT_AVIONICS_SPI_SLAVE)
     GPIO_MODER(LINK_GPIOA) &= ~(3U << 12);
@@ -325,7 +345,8 @@ int payload_spi_init(void) {
     while (!(STM32N6_RCC_SR & (1U << 3)))
         if (!--remaining) return -1;
     STM32N6_RCC_BUSENSR = (1U << 6) | (1U << 9);
-    STM32N6_RCC_AHB4ENSR = (1U << 18) | (1U << 0) | (1U << 3) | (1U << 4) | (1U << 6);
+    STM32N6_RCC_AHB4ENSR = (1U << 18) | (1U << 0) | (1U << 3) | (1U << 4) |
+                         (1U << 6) | (1U << PAYLOAD_SPI_READY_GPIO_PORT);
     (void)STM32N6_RCC_AHB4ENR;
     STM32N6_PWR_SVMCR3 &= ~(1U << 24);
     STM32N6_RCC_CCIPR9 &= ~(7U << 20);
@@ -333,9 +354,7 @@ int payload_spi_init(void) {
     (void)STM32N6_RCC_APB2ENR;
     alternate(LINK_GPIOA, 3U, 1U);
     ready(0);
-    GPIO_MODER(LINK_GPIOD) = (GPIO_MODER(LINK_GPIOD) & ~(3U << 14)) | (1U << 14);
-    GPIO_OTYPER(LINK_GPIOD) &= ~LINK_READY_MASK;
-    GPIO_PUPDR(LINK_GPIOD) &= ~(3U << 14);
+    gpio_pin(LINK_READY_PORT, LINK_READY_PIN, 1, 0U);
     alternate(LINK_GPIOG, 2U, 0U);
     alternate(LINK_GPIOG, 1U, 0U);
     alternate(LINK_GPIOE, 15U, 0U);
@@ -398,7 +417,7 @@ int payload_spi_exchange_target(enum payload_spi_target target,
     const struct target_pins *pins = &targets[target];
     /* Each branch of the jumper bus needs its validated clock edge rate. */
     GPIO_OSPEEDR(LINK_GPIOA) = (GPIO_OSPEEDR(LINK_GPIOA) & ~(3U << 10)) |
-                             (software_cs ? 1U << 10 : 0U);
+        ((software_cs ? AVIONICS_SPI_SCK_SPEED : PAYLOAD_SPI_SCK_SPEED) << 10);
     memcpy(transmit, tx, PAYLOAD_SPI_SIZE);
     if (prepare())
         return -1;
@@ -430,7 +449,7 @@ int payload_spi_exchange_target(enum payload_spi_target target,
 #if defined(__arm__) || defined(__thumb__)
         __asm volatile ("dsb sy" ::: "memory");
 #endif
-        for (unsigned int settle = 0; settle < 64U; ++settle)
+        for (unsigned int settle = 0; settle < PAYLOAD_SPI_CS_SETTLE_CYCLES; ++settle)
             __asm volatile ("nop");
     }
     LINK_REG(0x00U) |= SPI_CR1_CSTART;
@@ -542,7 +561,7 @@ int payload_spi_service(uint8_t out[PAYLOAD_SPI_SIZE]) {
         if (!selected)
             selected_at = slave_tick();
         selected = 1;
-        if ((uint32_t)(slave_tick() - selected_at) >= 3000U) {
+        if ((uint32_t)(slave_tick() - selected_at) >= PAYLOAD_SPI_SLAVE_TIMEOUT_MS) {
             stop_link();
             payload_spi_rx_buffer.status = PAYLOAD_SPI_RX_ERROR;
 #if defined(CUBESAT_AVIONICS_SPI_SLAVE)

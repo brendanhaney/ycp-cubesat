@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <config.h>
 
 /* All multi-byte fields are little endian. SPI replies acknowledge the
  * previous command; NOP polls leave the cached reply intact. */
@@ -10,9 +11,9 @@
 #define IMAGE_SPI_DATA_OFFSET 28U
 #define IMAGE_SPI_DATA_SIZE 224U
 #define IMAGE_SPI_CRC_OFFSET 252U
-#define IMAGE_MAX_JPEG_SIZE (800U * 480U * 2U)
+#define IMAGE_MAX_JPEG_SIZE MAX_IMG_FRAME_SIZE
 #define IMAGE_UART_HEADER_SIZE 24U
-#define IMAGE_UART_BAUD 921600U
+#define IMAGE_UART_BAUD COMMS_UART_BAUD
 #define IMAGE_RESPONSE_FLAG 0x80U
 
 enum image_opcode {

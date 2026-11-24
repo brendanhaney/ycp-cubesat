@@ -113,7 +113,7 @@ sim-radio: renode-radio $(RENODE_BUILD)/spi-renode
 
 sim-payload: renode-payload
 
-test: all test-build test-platform test-uart test-i2c test-thermometer test-barometer test-imu test-payload $(BUILD)/test-spi-model
+test: all test-build test-config test-platform test-uart test-i2c test-thermometer test-barometer test-imu test-payload $(BUILD)/test-spi-model
 	$(BUILD)/test-spi-model
 
 test-build:
@@ -121,6 +121,10 @@ test-build:
 
 test-platform:
 	python3 -B tests/test_stm32n6.py
+
+.PHONY: test-config
+test-config:
+	python3 -B tests/test_config.py
 
 H7_FLASH_TOOL ?= st-flash
 H7_FLASH_ADDR ?= 0x08000000

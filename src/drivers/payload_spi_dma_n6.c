@@ -16,7 +16,6 @@
 #define DMA_FLAGS (DMA_CSR_TCF | DMA_CSR_HTF | DMA_ERRORS | DMA_CSR_SUSPF)
 #define DMA_INTERRUPTS (DMA_CCR_TCIE | DMA_CCR_DTEIE | DMA_CCR_ULEIE | \
                         DMA_CCR_USEIE | DMA_CCR_TOIE)
-#define STOP_POLL_LIMIT 100000U
 
 static int initialized;
 static volatile int active, result;
@@ -33,7 +32,7 @@ static void unlock_interrupts(uint32_t previous) {
 }
 
 static int stop_channel(DMA_Channel_TypeDef *channel) {
-    uint32_t remaining = STOP_POLL_LIMIT;
+    uint32_t remaining = PAYLOAD_SPI_DMA_STOP_LIMIT;
     channel->CCR &= ~DMA_INTERRUPTS;
     if (channel->CCR & DMA_CCR_EN) {
         channel->CCR |= DMA_CCR_SUSP;
@@ -45,7 +44,7 @@ static int stop_channel(DMA_Channel_TypeDef *channel) {
     }
     /* Reset only this channel, including its internal FIFO. */
     channel->CCR |= DMA_CCR_RESET;
-    remaining = STOP_POLL_LIMIT;
+    remaining = PAYLOAD_SPI_DMA_STOP_LIMIT;
     while (channel->CCR & (DMA_CCR_EN | DMA_CCR_RESET)) {
         if (!--remaining)
             return -1;

@@ -1,3 +1,4 @@
+#include <config.h>
 #include <drivers.h>
 #include <sensors.h>
 #include <utils.h>
@@ -148,7 +149,7 @@ static int poll_barometer(ms5611_t *sensor) {
 
         int status = ms5611_init(sensor, address);
 
-        if (status == I2C_ERR_NACK) {
+        if (status == I2C_ERR_NACK && AVIONICS_BAROMETER_TRY_ALTERNATE_ADDRESS) {
 
             uint8_t first_command = sensor->last_command;
 
@@ -198,7 +199,8 @@ static int poll_imu(bmi270_t *sensor) {
         uint8_t address = IMU_1_ADDRESS;
         int status = bmi270_init(sensor, address);
 
-        if (status == I2C_ERR_NACK || status == BMI270_ERR_ID) {
+        if ((status == I2C_ERR_NACK || status == BMI270_ERR_ID) &&
+            AVIONICS_IMU_TRY_ALTERNATE_ADDRESS) {
 
             int first_status = status;
             address ^= 1U;
@@ -403,7 +405,7 @@ int main(void) {
         telemetry_response(0);
         service_spi();
 #else
-        delay_ms(10U);
+        delay_ms(AVIONICS_STANDALONE_POLL_INTERVAL_MS);
 #endif
     }
 }

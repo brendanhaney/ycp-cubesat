@@ -130,6 +130,11 @@ int main(void) {
 
     }
 
+#if PAYLOAD_CAPTURE_INTERVAL_MS > 0
+    uint32_t last_capture_started = 0;
+    int capture_attempted = 0;
+#endif
+
     while (1) {
 
         /* Process INFO/READ before deciding whether the next capture can run. */
@@ -140,11 +145,24 @@ int main(void) {
              * would consume them even if automatic_capture were false. */
             payload_camera_poll();
         } else {
-            const int automatic_capture = !debug_capture_request && !debug_capture_ready;
+#if PAYLOAD_CAPTURE_INTERVAL_MS > 0
+            const uint32_t now = HAL_GetTick();
+            const int interval_elapsed = !capture_attempted ||
+                (uint32_t)(now - last_capture_started) >= PAYLOAD_CAPTURE_INTERVAL_MS;
+#else
+            const int interval_elapsed = 1;
+#endif
+            const int automatic_capture = interval_elapsed &&
+                !debug_capture_request && !debug_capture_ready;
             const int capture_requested = automatic_capture || debug_capture_request;
 
-            if (capture_requested)
+            if (capture_requested) {
                 payload_spi_pause();
+#if PAYLOAD_CAPTURE_INTERVAL_MS > 0
+                last_capture_started = now;
+                capture_attempted = 1;
+#endif
+            }
 
             app_capture_step(automatic_capture);
         }
@@ -348,7 +366,7 @@ static void CONSOLE_Config() {
     HAL_GPIO_Init(GPIOE, &gpio_init);
 
     huart1.Instance = USART1;
-    huart1.Init.BaudRate = 115200;
+    huart1.Init.BaudRate = PAYLOAD_UART_BAUD;
     huart1.Init.Mode = UART_MODE_TX_RX;
     huart1.Init.Parity = UART_PARITY_NONE;
     huart1.Init.WordLength = UART_WORDLENGTH_8B;
@@ -442,10 +460,10 @@ static void board_init(void) {
     debug_sram6_readback = *sram6_test;
     debug_sram6_pass = (debug_sram6_readback == 0xAA556789U);
 
-    /* Test a full 800x480 YUV422 buffer across SRAM3 and SRAM4 */
+    /* Test a configured YUV422 buffer across SRAM3 and SRAM4. */
     {
         volatile uint32_t *buffer = (volatile uint32_t *)0x34200000UL;
-        const uint32_t words = (800U * 480U * 2U) / 4U;
+        const uint32_t words = MAX_IMG_FRAME_SIZE / sizeof(uint32_t);
         uint32_t i;
 
         /* Write test pattern */
@@ -469,10 +487,10 @@ static void board_init(void) {
         debug_span34_done = 1;
     }
 
-    /* Test full 800x480 buffer across SRAM5 and SRAM6 */
+    /* Test a configured buffer across SRAM5 and SRAM6. */
     {
         volatile uint32_t *buffer = (volatile uint32_t *)0x342E0000UL;
-        const uint32_t words = (800U * 480U * 2U) / 4U;
+        const uint32_t words = MAX_IMG_FRAME_SIZE / sizeof(uint32_t);
         uint32_t i;
 
         /* Write test pattern */
