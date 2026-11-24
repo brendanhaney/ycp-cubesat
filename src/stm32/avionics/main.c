@@ -314,12 +314,13 @@ int main(void) {
 #if defined(CUBESAT_AVIONICS_SPI_SLAVE)
         if (debug_telemetry_samples) {
             service_spi();
-            if ((uint32_t)(uptime_ms() - sampled_at) < TELEMETRY_INTERVAL_MS ||
+            if ((uint32_t)(uptime_ms() - sampled_at) < TELEMETRY_SAMPLE_INTERVAL_MS ||
                 payload_spi_busy())
                 continue;
         }
         /* Sensor conversion, initialization and UART output can block. Do
          * them with READY low, retaining the last complete telemetry sample. */
+        sampled_at = uptime_ms();
         payload_spi_pause();
         memset(telemetry, 0, sizeof(telemetry));
         telemetry[TELEMETRY_TEMP1_STATUS] = (uint32_t)I2C_ERR_NOT_INITIALIZED;
@@ -397,9 +398,8 @@ int main(void) {
         }
 
 #if defined(CUBESAT_AVIONICS_SPI_SLAVE)
-        sampled_at = uptime_ms();
         telemetry[TELEMETRY_COUNTER] = ++debug_telemetry_samples;
-        telemetry[TELEMETRY_TIME_MS] = sampled_at;
+        telemetry[TELEMETRY_TIME_MS] = uptime_ms();
         telemetry_response(0);
         service_spi();
 #else

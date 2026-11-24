@@ -4,6 +4,7 @@
 #include <image_protocol.h>
 #include <payload_spi.h>
 #include <telemetry_protocol.h>
+#include <comms_buffers.h>
 #include <string.h>
 
 volatile unsigned int debug_spi_requests;
@@ -18,11 +19,18 @@ volatile unsigned int debug_telemetry_received;
 volatile unsigned int debug_telemetry_errors;
 volatile unsigned int debug_telemetry_counter;
 volatile unsigned int debug_spi_timeouts;
+volatile unsigned int debug_images_received;
+volatile unsigned int debug_telemetry_skipped;
 
 static uint32_t sequence;
 static uint8_t response[IMAGE_SPI_FRAME_SIZE];
 static uint8_t telemetry_response[IMAGE_SPI_FRAME_SIZE];
 static uint32_t last_telemetry_poll;
+static uint32_t last_telemetry_print;
+static uint32_t latest_telemetry[TELEMETRY_WORDS];
+static uint32_t latest_telemetry_crc;
+static uint32_t latest_telemetry_received_ms;
+static int latest_telemetry_valid;
 static void service_telemetry(void);
 
 /* Replies are prepared after a command arrives. Repeating a command with the
@@ -39,29 +47,39 @@ static int request_frame(enum payload_spi_target target, uint8_t opcode,
     image_frame_seal(command);
 
     uint32_t started = uptime_ms();
+
     while ((uint32_t)(uptime_ms() - started) < timeout_ms) {
+
         if (target == PAYLOAD_SPI_TARGET_PAYLOAD) {
             const uint32_t before = uptime_ms();
             service_telemetry();
             started += uptime_ms() - before;
         }
+
         /* Avionics raises READY only after the master selects it. The
          * payload advertises a prepared frame before CS is asserted. */
-        if (target == PAYLOAD_SPI_TARGET_PAYLOAD &&
-            !payload_spi_target_ready(target))
+        if (target == PAYLOAD_SPI_TARGET_PAYLOAD && !payload_spi_target_ready(target))
             continue;
 
         if (!payload_spi_exchange_target(target, command, NULL)) {
+
             const uint8_t *received;
+
             if (payload_spi_receive_acquire(&received)) {
+
                 const int valid = image_frame_valid(received) &&
                     received[4] == (opcode | IMAGE_RESPONSE_FLAG) &&
                     image_get_u32(received + 8) == current;
+
                 if (valid)
                     memcpy(reply, received, IMAGE_SPI_FRAME_SIZE);
+
                 payload_spi_receive_release();
+
                 if (valid) {
+
                     debug_spi_requests++;
+
                     return reply[5];
                 }
             }
@@ -79,45 +97,13 @@ static int request(uint8_t opcode, uint32_t image_id, uint32_t offset) {
 }
 
 static int32_t telemetry_value(enum telemetry_word word) {
-    return (int32_t)image_get_u32(telemetry_response + IMAGE_SPI_DATA_OFFSET + word * 4U);
+    return (int32_t)latest_telemetry[word];
 }
 
-static void service_telemetry(void) {
-
-    const uint32_t now = uptime_ms();
-
-    if ((uint32_t)(now - last_telemetry_poll) < TELEMETRY_INTERVAL_MS)
-        return;
-
-    last_telemetry_poll = now;
-
-    if (request_frame(PAYLOAD_SPI_TARGET_AVIONICS, TELEMETRY_OP_READ, 0, 0, telemetry_response, 500U) != IMAGE_STATUS_OK) {
-
-        debug_telemetry_errors++;
-
-        uart_printf("Avionics: waiting for telemetry\n");
-
-        return;
-    }
-
-    if (image_get_u16(telemetry_response + 6) != TELEMETRY_DATA_SIZE ||
-        image_get_u32(telemetry_response + 20) != TELEMETRY_DATA_SIZE ||
-        image_get_u32(telemetry_response + 12) != (uint32_t)telemetry_value(TELEMETRY_COUNTER)) {
-
-        debug_telemetry_errors++;
-
-        uart_printf("Avionics: invalid telemetry response\n");
-
-        return;
-    }
-
-    debug_telemetry_received++;
-
-    debug_telemetry_counter = (uint32_t)telemetry_value(TELEMETRY_COUNTER);
-
+static void print_telemetry(void) {
     uart_printf("Telemetry %d: sample %d ms, received %d ms, CRC %x OK\n",
                 debug_telemetry_counter, telemetry_value(TELEMETRY_TIME_MS),
-                uptime_ms(), image_get_u32(telemetry_response + IMAGE_SPI_CRC_OFFSET));
+                latest_telemetry_received_ms, latest_telemetry_crc);
 
     for (unsigned int i = 0; i < 2; ++i) {
 
@@ -162,17 +148,59 @@ static void service_telemetry(void) {
     }
 }
 
-static int send_image(uint32_t id, uint32_t length, uint32_t crc) {
+static void service_telemetry(void) {
+    const uint32_t now = uptime_ms();
+    if ((uint32_t)(now - last_telemetry_poll) >= TELEMETRY_SAMPLE_INTERVAL_MS) {
+        last_telemetry_poll = now;
+        if (comms_telemetry_begin() == 0) {
+            if (request_frame(PAYLOAD_SPI_TARGET_AVIONICS, TELEMETRY_OP_READ,
+                              0, 0, telemetry_response, 500U) == IMAGE_STATUS_OK &&
+                image_get_u16(telemetry_response + 6) == TELEMETRY_DATA_SIZE &&
+                image_get_u32(telemetry_response + 20) == TELEMETRY_DATA_SIZE &&
+                image_get_u32(telemetry_response + 12) ==
+                    image_get_u32(telemetry_response + IMAGE_SPI_DATA_OFFSET) &&
+                comms_telemetry_complete(telemetry_response + IMAGE_SPI_DATA_OFFSET,
+                    TELEMETRY_DATA_SIZE,
+                    image_get_u32(telemetry_response + IMAGE_SPI_CRC_OFFSET)) == 0) {
+                debug_telemetry_received++;
+            } else {
+                debug_telemetry_errors++;
+                comms_buffer_abort(&comms_telemetry_buffer.flags);
+            }
+        } else {
+            debug_telemetry_skipped++;
+        }
+    }
+
+    if (comms_buffer_acquire(&comms_telemetry_buffer.flags)) {
+        memcpy(latest_telemetry, comms_telemetry_buffer.words, sizeof(latest_telemetry));
+        latest_telemetry_crc = comms_telemetry_buffer.crc32;
+        latest_telemetry_received_ms = uptime_ms();
+        latest_telemetry_valid = 1;
+        debug_telemetry_counter = latest_telemetry[TELEMETRY_COUNTER];
+        comms_buffer_release(&comms_telemetry_buffer.flags);
+    }
+
+    if ((uint32_t)(uptime_ms() - last_telemetry_print) >= TELEMETRY_INTERVAL_MS) {
+        last_telemetry_print = uptime_ms();
+        if (latest_telemetry_valid)
+            print_telemetry();
+        else
+            uart_printf("Avionics: waiting for telemetry\n");
+    }
+}
+
+static int receive_image(uint32_t id, uint32_t length, uint32_t crc) {
+    if (comms_image_begin(id, length, crc))
+        return -1;
 
     uint32_t offset = 0;
-    uint32_t received_crc = 0;
-
-    debug_image_expected_crc = crc;
+    int result = -1;
 
     while (offset < length) {
 
         if (request(IMAGE_OP_READ, id, offset) != IMAGE_STATUS_OK)
-            return -1;
+            goto release;
 
         const uint32_t remaining = length - offset;
         const uint32_t count = remaining < IMAGE_SPI_DATA_SIZE ? remaining : IMAGE_SPI_DATA_SIZE;
@@ -181,28 +209,67 @@ static int send_image(uint32_t id, uint32_t length, uint32_t crc) {
             image_get_u32(response + 12) != id ||
             image_get_u32(response + 16) != offset ||
             image_get_u32(response + 20) != length ||
-            image_get_u32(response + 24) != crc)
-            return -1;
-
-        received_crc = image_crc32_update(received_crc, response + IMAGE_SPI_DATA_OFFSET, count);
+            image_get_u32(response + 24) != crc ||
+            comms_image_append(offset, response + IMAGE_SPI_DATA_OFFSET, count))
+            goto release;
 
         offset += count;
     }
+    result = 0;
+
+release:
+    /* The N6 can reuse its JPEG RAM while comms handles its complete copy. */
+    if (request(IMAGE_OP_RELEASE, id, 0) != IMAGE_STATUS_OK)
+        debug_spi_errors++;
+    if (!result && !comms_image_complete()) {
+        debug_images_received++;
+        return 0;
+    }
+    comms_buffer_abort(&comms_image_buffer.flags);
+    return -1;
+}
+
+static void handle_image(void) {
+    if (!comms_buffer_acquire(&comms_image_buffer.flags))
+        return;
+
+    const uint32_t id = comms_image_buffer.image_id;
+    const uint32_t length = comms_image_buffer.length;
+    const uint32_t crc = comms_image_buffer.crc32;
+    uint32_t received_crc = 0;
+    uint32_t offset = 0;
+    while (offset < length) {
+        service_telemetry();
+        uint32_t count;
+        const uint8_t *data = comms_image_data(offset, &count);
+        if (!data || !count) {
+            debug_spi_errors++;
+            comms_buffer_abort(&comms_image_buffer.flags);
+            return;
+        }
+        if (count > 1024U)
+            count = 1024U;
+        received_crc = image_crc32_update(received_crc, data, count);
+        offset += count;
+    }
+
+    debug_image_expected_crc = crc;
+    debug_image_id = id;
+    debug_image_bytes = length;
+    debug_image_crc = received_crc;
 
     if (received_crc != crc) {
         debug_image_crc_errors++;
         uart_printf("Image %d CRC mismatch: expected %x received %x\n", id, crc, received_crc);
-        return -1;
+        comms_buffer_abort(&comms_image_buffer.flags);
+        return;
     }
 
-    debug_image_id = id;
-    debug_image_bytes = length;
-    debug_image_crc = crc;
     debug_images_sent++;
 
     uart_printf("Image %d: %d bytes, CRC %x == %x OK\n", id, length, crc, received_crc);
 
-    return 0;
+    comms_buffer_release(&comms_image_buffer.flags);
 }
 
 int main(void) {
@@ -221,11 +288,19 @@ int main(void) {
         return 1;
     }
 
-    uart_printf("Radio: shared SPI, avionics telemetry every 10 seconds\n");
-    last_telemetry_poll = uptime_ms() - TELEMETRY_INTERVAL_MS;
+    comms_buffers_init();
+    uart_printf("Radio: shared SPI, telemetry receive 1 second, print 10 seconds\n");
+    last_telemetry_poll = uptime_ms() - TELEMETRY_SAMPLE_INTERVAL_MS;
+    last_telemetry_print = uptime_ms() - TELEMETRY_INTERVAL_MS;
 
     while (1) {
+
         service_telemetry();
+
+        handle_image();
+
+        if (!(comms_image_buffer.flags & COMMS_BUFFER_READY))
+            continue;
 
         /* A zero image ID requests a lease on the latest saved image,
          * including one that this board has already validated. */
@@ -237,9 +312,9 @@ int main(void) {
 
             if (id && length && length <= IMAGE_MAX_JPEG_SIZE) {
 
-                if (send_image(id, length, crc))
+                if (receive_image(id, length, crc))
                     debug_spi_errors++;
-
+            } else if (id) {
                 request(IMAGE_OP_RELEASE, id, 0);
             }
         }
