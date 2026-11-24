@@ -28,12 +28,18 @@
 #include "app_config.h"
 
 #include "storage.h"
+#include "payload_spi.h"
+#include "image_server.h"
 
 extern uint8_t _sdata;
 extern uint8_t __uncached_bss_start__;
 extern uint8_t __uncached_bss_end__;
 
 UART_HandleTypeDef huart1;
+volatile uint32_t debug_spi_requests = 0;
+volatile uint32_t debug_spi_errors = 0;
+static int spi_initialized;
+static uint8_t spi_response[IMAGE_SPI_FRAME_SIZE];
 static volatile uint32_t debug_sram3_readback = 0;
 static volatile uint32_t debug_sram3_pass = 0;
 
@@ -60,6 +66,7 @@ static void IAC_Config();
 static void CONSOLE_Config(void);
 static void Setup_Mpu(void);
 static void board_init(void);
+static void service_payload_spi(void);
 
 /**
  * @brief  Main program
@@ -94,34 +101,91 @@ int main(void) {
 
     board_init();
 
+    spi_initialized = payload_spi_init() == 0;
+
+    if (!spi_initialized) {
+
+        debug_spi_errors++;
+
+        printf("Payload SPI init failed\n");
+
+    }
+
+    // Send image to comms over SPI
+    image_server_init(spi_response);
+
+    payload_spi_set_response(spi_response);
+
     debug_capture_status = payload_camera_init();
 
     if (debug_capture_status != PAYLOAD_OK) {
 
         BSP_LED_On(LED_RED);
 
-        while (1)
+        while (1) {
+            service_payload_spi();
+            image_server_transfer_active();
             __WFI();
+        }
 
     }
 
-    uint32_t last_capture = HAL_GetTick();
-
     while (1) {
 
-        const uint32_t now = HAL_GetTick();
+        /* Process INFO/READ before deciding whether the next capture can run. */
+        service_payload_spi();
 
-        const int automatic_capture = !debug_capture_request && !debug_capture_ready &&
-            (uint32_t)(now - last_capture) >= CAPTURE_INTERVAL_MS;
+        if (!image_server_capture_ready() || payload_spi_busy()) {
+            /* Leave debugger capture requests pending too: app_capture_step
+             * would consume them even if automatic_capture were false. */
+            payload_camera_poll();
+        } else {
+            const int automatic_capture = !debug_capture_request && !debug_capture_ready;
+            const int capture_requested = automatic_capture || debug_capture_request;
 
-        if (automatic_capture)
-            last_capture = now;
+            if (capture_requested)
+                payload_spi_pause();
 
-        // Take picture
-        app_capture_step(automatic_capture);
+            app_capture_step(automatic_capture);
+        }
+
+        // SPI requests wait until the complete save finishes.
+        service_payload_spi();
 
         __WFI();
 
+    }
+}
+
+static void service_payload_spi(void) {
+
+    if (!spi_initialized)
+        return;
+
+    const int result = payload_spi_service(NULL);
+
+    if (result < 0) {
+
+        debug_spi_errors++;
+
+        payload_spi_service(NULL);
+
+        return;
+    }
+
+    if (result > 0) {
+        const uint8_t *request;
+        if (!payload_spi_receive_acquire(&request))
+            return;
+
+        debug_spi_requests++;
+
+        if (image_server_handle(request, spi_response))
+            payload_spi_set_response(spi_response);
+        payload_spi_receive_release();
+
+        /* Preload the next reply before sleeping or starting another capture. */
+        payload_spi_service(NULL);
     }
 }
 

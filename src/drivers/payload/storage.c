@@ -37,6 +37,8 @@ volatile uint32_t debug_sd_init_status = 0xFFFFFFFFU;
 volatile uint32_t debug_sd_info_status = 0xFFFFFFFFU;
 volatile uint32_t debug_sd_read_status = 0xFFFFFFFFU;
 volatile uint32_t debug_sd_read_error = 0xFFFFFFFFU;
+/* Legacy names retained for debugger scripts; these report the configured
+ * bus-width operation, which now uses the reliable one-bit mode. */
 volatile uint32_t debug_sd_4bit_status = 0xFFFFFFFFU;
 volatile uint32_t debug_sd_4bit_error = 0xFFFFFFFFU;
 volatile uint32_t debug_fat_open_status = 0xFFFFFFFFU;
@@ -93,7 +95,8 @@ static void SDMMC2_ReadOnlyTest(void) {
     hsd2.Init.ClockPowerSave = SDMMC_CLOCK_POWER_SAVE_DISABLE;
     hsd2.Init.BusWide = SDMMC_BUS_WIDE_1B;
     hsd2.Init.HardwareFlowControl = SDMMC_HARDWARE_FLOW_CONTROL_DISABLE;
-    hsd2.Init.ClockDiv = 16;
+    /* Slow the SD clock for the jumper-wired card's signal integrity. */
+    hsd2.Init.ClockDiv = 64;
 
     debug_sd_init_status = HAL_SD_Init(&hsd2);
     debug_sd_error = hsd2.ErrorCode;
@@ -113,12 +116,12 @@ static void SDMMC2_ReadOnlyTest(void) {
     }
 
     if (debug_sd_info_status == HAL_OK) {
-        // Switch the card and controller to 4-bit mode
-        debug_sd_4bit_status = HAL_SD_ConfigWideBusOperation(&hsd2, SDMMC_BUS_WIDE_4B);
+        /* Use the one-bit mode validated with the jumper-wired card. */
+        debug_sd_4bit_status = HAL_SD_ConfigWideBusOperation(&hsd2, SDMMC_BUS_WIDE_1B);
 
         debug_sd_4bit_error = hsd2.ErrorCode;
 
-        // Read sector 0 only if switching succeeded
+        // Read again only if the bus configuration succeeded.
         if (debug_sd_4bit_status == HAL_OK) {
             debug_sd_read_status = HAL_SD_ReadBlocks(&hsd2, debug_sd_sector0, 8192, 1, 1000);
 
@@ -305,7 +308,7 @@ static void FatFs_WriteTest(void) {
     UINT bytes_written = 0;
 
     static const char message[] = "CubeSat STM32N657\r\n"
-                                  "SDMMC2 4-bit storage test\r\n";
+                                  "SDMMC2 1-bit storage test\r\n";
 
     /* Create or overwrite our test file */
     debug_fat_write_open = f_open(&file, "0:/CSAT.TXT", FA_CREATE_ALWAYS | FA_WRITE);

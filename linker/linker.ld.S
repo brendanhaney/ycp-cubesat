@@ -9,6 +9,7 @@ MEMORY
 #elif defined(CUBESAT_STM32H7)
     STM32H7_FLASH (rx) : ORIGIN = 0x08000000, LENGTH = 2048K
     STM32H7_RAM (rwx) : ORIGIN = 0x24000000, LENGTH = 512K
+    STM32H7_D2_RAM (rwx) : ORIGIN = 0x30000000, LENGTH = 288K
 #endif
 }
 
@@ -105,6 +106,14 @@ SECTIONS
     __HeapBase = _end;
     __HeapLimit = _sstack;
     .stack _sstack (NOLOAD) : { . += 16K; } > RAM STACK_SEGMENT
+#if defined(CUBESAT_STM32H7)
+    .image_buffer_d2 (NOLOAD) :
+    {
+        . = ALIGN(32);
+        *(.image_buffer_d2)
+        . = ALIGN(32);
+    } > STM32H7_D2_RAM
+#endif
     .ARM.attributes 0 : { *(.ARM.attributes) }
     /DISCARD/ : { *(.note.GNU-stack) }
 }
@@ -116,5 +125,6 @@ ASSERT((_edata & 31) == 0, "FSBL payload alignment")
 ASSERT(__HeapBase + 2K <= __HeapLimit, "AXISRAM2 exhausted by image, heap and stack")
 #elif defined(CUBESAT_STM32H7)
 ASSERT(SIZEOF(.isr_vector) == 664, "STM32H753 vector table size")
+ASSERT(SIZEOF(.image_buffer_d2) <= LENGTH(STM32H7_D2_RAM), "D2 image buffer exceeds SRAM")
 ASSERT(__HeapBase + 2K <= __HeapLimit, "RAM exhausted by data, heap and stack")
 #endif

@@ -2,6 +2,54 @@
 #include <sensors.h>
 #include <utils.h>
 
+#if defined(CUBESAT_AVIONICS_SPI_SLAVE)
+#include <image_protocol.h>
+#include <payload_spi.h>
+#include <telemetry_protocol.h>
+#include "utils/uptime.h"
+#include <string.h>
+
+static uint32_t telemetry[TELEMETRY_WORDS];
+static uint8_t spi_response[IMAGE_SPI_FRAME_SIZE];
+volatile unsigned int debug_telemetry_samples;
+volatile unsigned int debug_telemetry_requests;
+volatile unsigned int debug_telemetry_errors;
+
+static void telemetry_response(uint32_t sequence) {
+    image_frame_init(spi_response, TELEMETRY_OP_READ | IMAGE_RESPONSE_FLAG,
+                     IMAGE_STATUS_OK, sequence, telemetry[TELEMETRY_COUNTER],
+                     0, TELEMETRY_DATA_SIZE, 0);
+    image_put_u16(spi_response + 6, TELEMETRY_DATA_SIZE);
+    for (unsigned int i = 0; i < TELEMETRY_WORDS; ++i)
+        image_put_u32(spi_response + IMAGE_SPI_DATA_OFFSET + i * 4U, telemetry[i]);
+    image_frame_seal(spi_response);
+    payload_spi_set_response(spi_response);
+}
+
+static void service_spi(void) {
+    const uint8_t *request;
+    if (payload_spi_service(NULL) < 0)
+        debug_telemetry_errors++;
+    if (payload_spi_receive_acquire(&request)) {
+        if (!image_frame_valid(request)) {
+            debug_telemetry_errors++;
+        } else if (request[4] == TELEMETRY_OP_READ) {
+            telemetry_response(image_get_u32(request + 8));
+            debug_telemetry_requests++;
+        } else if (request[4] != IMAGE_OP_NOP) {
+            image_frame_init(spi_response, request[4] | IMAGE_RESPONSE_FLAG,
+                             IMAGE_STATUS_BAD_REQUEST,
+                             image_get_u32(request + 8), 0, 0, 0, 0);
+            image_frame_seal(spi_response);
+            payload_spi_set_response(spi_response);
+        }
+        payload_spi_receive_release();
+    }
+    if (payload_spi_service(NULL) < 0)
+        debug_telemetry_errors++;
+}
+#endif
+
 static void print_error(const char *sensor, const char *operation, int status, uint8_t address) {
 
     const char *message;
@@ -59,6 +107,10 @@ static int poll_thermometer(uint8_t address, const char *name,
     int status = tmp117_read(address, &temp);
 
     if (status == TMP117_OK) {
+#if defined(CUBESAT_AVIONICS_SPI_SLAVE)
+        telemetry[address == THERMOMETER_1_ADDRESS ?
+                  TELEMETRY_TEMP1_MC : TELEMETRY_TEMP2_MC] = (uint32_t)temp;
+#endif
         
         uart_printf(temperature_label);
         uart_printf("%f C\n", (double)temp / 1000);
@@ -121,6 +173,10 @@ static int poll_barometer(ms5611_t *sensor) {
     int status = ms5611_read(sensor, &pressure, &temperature);
 
     if (status == MS5611_OK) {
+#if defined(CUBESAT_AVIONICS_SPI_SLAVE)
+        telemetry[TELEMETRY_PRESSURE_PA] = (uint32_t)pressure;
+        telemetry[TELEMETRY_BARO_CC] = (uint32_t)temperature;
+#endif
 
         uart_printf("Pressure: %f hPa\n", (double)pressure / 100);
 
@@ -166,6 +222,12 @@ static int poll_imu(bmi270_t *sensor) {
     int status = bmi270_read(sensor, &sample);
 
     if (status == BMI270_OK) {
+#if defined(CUBESAT_AVIONICS_SPI_SLAVE)
+        for (unsigned int i = 0; i < 3U; ++i) {
+            telemetry[TELEMETRY_ACCEL_X_MG + i] = (uint32_t)sample.accel_mg[i];
+            telemetry[TELEMETRY_GYRO_X_MDPS + i] = (uint32_t)sample.gyro_mdps[i];
+        }
+#endif
 
         uart_printf("Accelerometer: X=%f Y=%f Z=%f g\n",
                     (double)sample.accel_mg[0] / 1000,
@@ -240,12 +302,43 @@ int main(void) {
     uart_printf("IMU         addr: 0x%x on I2C (alternate 0x%x)\n\n",
                 IMU_1_ADDRESS, IMU_1_ADDRESS ^ 1U);
 
+#if defined(CUBESAT_AVIONICS_SPI_SLAVE)
+    if (uptime_init(64000000U) || payload_spi_init()) {
+        uart_printf("Avionics: SPI DMA initialization failed\n");
+        return 1;
+    }
+    uint32_t sampled_at = 0;
+#endif
+
     for (;;) {
+#if defined(CUBESAT_AVIONICS_SPI_SLAVE)
+        if (debug_telemetry_samples) {
+            service_spi();
+            if ((uint32_t)(uptime_ms() - sampled_at) < TELEMETRY_SAMPLE_INTERVAL_MS ||
+                payload_spi_busy())
+                continue;
+        }
+        /* Sensor conversion, initialization and UART output can block. Do
+         * them with READY low, retaining the last complete telemetry sample. */
+        sampled_at = uptime_ms();
+        payload_spi_pause();
+        memset(telemetry, 0, sizeof(telemetry));
+        telemetry[TELEMETRY_TEMP1_STATUS] = (uint32_t)I2C_ERR_NOT_INITIALIZED;
+        telemetry[TELEMETRY_TEMP2_STATUS] = (uint32_t)I2C_ERR_NOT_INITIALIZED;
+        telemetry[TELEMETRY_BARO_STATUS] = (uint32_t)I2C_ERR_NOT_INITIALIZED;
+        telemetry[TELEMETRY_IMU_STATUS] = (uint32_t)I2C_ERR_NOT_INITIALIZED;
+#endif
         if (!bus_ready) {
 
             int status = i2c2_init();
 
             if (status != I2C_OK) {
+#if defined(CUBESAT_AVIONICS_SPI_SLAVE)
+                telemetry[TELEMETRY_TEMP1_STATUS] = (uint32_t)status;
+                telemetry[TELEMETRY_TEMP2_STATUS] = (uint32_t)status;
+                telemetry[TELEMETRY_BARO_STATUS] = (uint32_t)status;
+                telemetry[TELEMETRY_IMU_STATUS] = (uint32_t)status;
+#endif
 
                 print_error("I2C2", "initialization", status, 0);
 
@@ -280,6 +373,12 @@ int main(void) {
 
             int barometer_status = poll_barometer(&barometer);
             int imu_status = poll_imu(&imu);
+#if defined(CUBESAT_AVIONICS_SPI_SLAVE)
+            telemetry[TELEMETRY_TEMP1_STATUS] = (uint32_t)thermometer_1_status;
+            telemetry[TELEMETRY_TEMP2_STATUS] = (uint32_t)thermometer_2_status;
+            telemetry[TELEMETRY_BARO_STATUS] = (uint32_t)barometer_status;
+            telemetry[TELEMETRY_IMU_STATUS] = (uint32_t)imu_status;
+#endif
 
             uart_printf("\n");
 
@@ -298,6 +397,13 @@ int main(void) {
             }
         }
 
+#if defined(CUBESAT_AVIONICS_SPI_SLAVE)
+        telemetry[TELEMETRY_COUNTER] = ++debug_telemetry_samples;
+        telemetry[TELEMETRY_TIME_MS] = uptime_ms();
+        telemetry_response(0);
+        service_spi();
+#else
         delay_ms(10U);
+#endif
     }
 }

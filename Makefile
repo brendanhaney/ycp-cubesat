@@ -19,7 +19,8 @@ RESC_DIR = ./venv
 
 FIRMWARE_CFLAGS = $(filter-out -mcpu=% -march=% -mfpu=% -mfloat-abi=% -mcmse -mno-cmse -mthumb -marm,$(CFLAGS))
 stm32h7_FLAGS = -mcpu=cortex-m7 -mthumb -mfloat-abi=soft -DCUBESAT_STM32H7
-COMMON_SOURCES = src/drivers/uart.c src/drivers/spi.c \
+COMMON_SOURCES = src/drivers/uart.c src/drivers/spi.c src/drivers/payload_spi.c \
+                 src/drivers/payload_spi_dma_h7.c \
                  $(wildcard src/utils/*.c) src/drivers/startup.c
 stm32h7_SOURCES = src/drivers/i2c.c src/drivers/tmp117.c src/drivers/ms5611.c \
                   src/drivers/bmi270.c src/drivers/bosch/bmi2.c src/drivers/bosch/bmi270.c \
@@ -46,7 +47,8 @@ endef
 $(eval $(call firmware,avionics,stm32h7,$(H7_BUILD)))
 $(eval $(call firmware,radio,stm32h7,$(H7_BUILD)))
 $(foreach module,avionics radio,$(eval $(call firmware,$(module),stm32h7,$(RENODE_BUILD))))
-$(foreach module,avionics radio,$(eval $(call firmware,$(module),stm32h7,$(NUCLEO_BUILD),-DCUBESAT_NUCLEO_H753ZI)))
+$(eval $(call firmware,avionics,stm32h7,$(NUCLEO_BUILD),-DCUBESAT_NUCLEO_H753ZI -DCUBESAT_AVIONICS_SPI_SLAVE))
+$(eval $(call firmware,radio,stm32h7,$(NUCLEO_BUILD),-DCUBESAT_NUCLEO_H753ZI))
 
 .PHONY: all avionics radio payload renode renode-avionics renode-radio renode-payload clean FORCE
 .PHONY: nucleo-avionics nucleo-radio nucleo-payload
@@ -176,7 +178,7 @@ n6-help:
 	@echo "make payload: build the SRAM executable at $(N6_BUILD)/payload.elf."
 	@echo "make run-payload (or make flash-payload): load, verify and start the payload in SRAM over ST-LINK."
 	@echo "Repeat run-payload after reset or power loss. No signing tool or external loader is needed for SRAM."
-	@echo "make capture-payload: request a capture from the running payload and verify JPEG/SD readback into $(PAYLOAD_CAPTURE_OUTPUT)."
+	@echo "make capture-payload: request a capture, check its SD save, and download the JPEG into $(PAYLOAD_CAPTURE_OUTPUT)."
 	@echo "Set PAYLOAD_CAPTURE_COUNT to repeat captures and PAYLOAD_CAPTURE_TIMEOUT to change the wait limit."
 	@echo "make signed-payload: create $(N6_BUILD)/payload-trusted.bin with STM32CubeProgrammer's signing tool."
 	@echo "make flash-payload-external: program persistent external flash; standalone boot requires BOOT0=0 and BOOT1=0."
@@ -188,6 +190,14 @@ uart-listen:
 
 uart-view:
 	python3 scripts/view_avionics.py $(UART_ARGS)
+
+.PHONY: images-view test-images
+images-view:
+	python3 scripts/view_images.py $(UART_ARGS)
+
+test-images:
+	python3 -B tests/test_image_protocol.py
+	python3 -B tests/test_view_images.py
 
 test-uart:
 	python3 -B tests/test_uart.py
@@ -211,6 +221,9 @@ test-payload: payload test-payload-drivers test-payload-launcher test-capture-pa
 	python3 -B tests/test_payload_renode.py --build $(RENODE_BUILD)/payload-renode
 
 test-payload-drivers:
+	python3 -B tests/test_image_protocol.py
+	python3 -B tests/test_payload_spi_link.py
+	python3 -B tests/test_radio_shared_spi.py
 	python3 -B tests/test_camera_conversion.py
 	python3 -B tests/test_payload_storage.py
 
