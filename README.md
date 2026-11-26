@@ -3,6 +3,20 @@
 Fall 2026 - Spring 2027 CubeSat Capstone. This repository includes firmware for
 avionics (STM32H753), radio (STM32H753), and camera payload (STM32N6) computers .
 
+## Linux package requirements
+
+| Use | Arch Linux | Debian Linux |
+| --- | --- | --- |
+| Firmware and SPI adapter builds | `make`, `gcc`, `arm-none-eabi-gcc`, `arm-none-eabi-binutils`, `arm-none-eabi-newlib` | `build-essential`, `gcc-arm-none-eabi`, `binutils-arm-none-eabi`, `libnewlib-arm-none-eabi` |
+| Renode simulation | `python`, `openssl-3`, [Renode Linux portable][renode-release] | `python3`, `libssl3t64`, [Renode Linux portable][renode-release] |
+| Renode desktop UI | `gtk3` | `libgtk-3-0t64` |
+| USB tools and programming | `usbutils`, `stlink`, [STM32CubeProgrammer][cube-programmer] (payload) | `usbutils`, `stlink-tools`, [STM32CubeProgrammer][cube-programmer] (payload) |
+| UART tools and viewers | `python-pyserial`, `python-pygame`, `python-pillow`, `tk` | `python3-serial`, `python3-pygame`, `python3-pil`, `python3-pil.imagetk`, `python3-tk` |
+| Python virtual environment | `python` | `python3-venv` |
+
+[renode-release]: https://github.com/renode/renode/releases/tag/v1.17.1
+[cube-programmer]: https://www.st.com/en/development-tools/stm32cubeprog.html
+
 # Development Workflow
 All sub-systems/features should be developed in separate branches. Please create a branch for each feature. These development branches can be individually merged into the **dev** branch once they have been tested. Only after features are merged into dev and tested together can they be merged into **main**.
 
